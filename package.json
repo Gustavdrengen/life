@@ -13,7 +13,7 @@
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write \"src/**/*.{ts,svelte,css}\" \"tests/**/*.ts\" \"specs/**/*.md\" \"*.md\"",
     "typecheck": "tsc --noEmit",
-    "export:html": "vite build && node tools/export-singlefile.mjs dist/index.html"
+    "export:html": "node tools/export-singlefile.mjs dist/ecosystem.html"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
