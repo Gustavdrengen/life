@@ -3,6 +3,10 @@
  * script-blocks parser-clean for ESLint flat config.
  */
 export type Reset = () => void;
+export type SaveSnapshot = () => void;
+export type LoadSnapshot = () => void;
+export type CopyOrganism = () => void;
+export type PasteOrganism = () => void;
 
 export interface HudProps {
   fps: number;
@@ -21,6 +25,11 @@ export interface HudProps {
   onStep: () => void;
   onTogglePause: () => void;
   onChangeConfig: (key: ConfigKey, value: number) => void;
+  onSaveSnapshot: SaveSnapshot;
+  onLoadSnapshot: LoadSnapshot;
+  onCopyOrganism: CopyOrganism;
+  onPasteOrganism: PasteOrganism;
+  clipboardStatus: string;
   paused: boolean;
   initialPopulation: number;
 }

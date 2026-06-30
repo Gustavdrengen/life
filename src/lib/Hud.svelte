@@ -16,6 +16,11 @@
     onStep,
     onTogglePause,
     onChangeConfig,
+    onSaveSnapshot,
+    onLoadSnapshot,
+    onCopyOrganism,
+    onPasteOrganism,
+    clipboardStatus,
     paused,
     initialPopulation
   }: HudProps = $props();
@@ -138,6 +143,47 @@
     >
       reset world (R)
     </button>
+  </section>
+
+  <section class="rounded border border-bg-edge bg-bg-edge/30 p-2" aria-label="Save / load">
+    <h2 class="text-2xs uppercase tracking-widest text-text-secondary mb-1">Save / Load</h2>
+    <div class="flex flex-col gap-1">
+      <button
+        class="text-left text-2xs px-2 py-1 bg-bg-edge text-text-secondary hover:text-text-primary hover:bg-bg-muted rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-signalA"
+        type="button"
+        onclick={onSaveSnapshot}
+        title="Save the current world as a downloadable .snapshot.json file"
+      >
+        save snapshot (S)
+      </button>
+      <button
+        class="text-left text-2xs px-2 py-1 bg-bg-edge text-text-secondary hover:text-text-primary hover:bg-bg-muted rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-signalA"
+        type="button"
+        onclick={onLoadSnapshot}
+        title="Open a saved snapshot file and restore it into this world"
+      >
+        load snapshot
+      </button>
+    </div>
+    <p class="text-2xs text-text-muted mt-1">{clipboardStatus}</p>
+    <div class="flex flex-col gap-1 mt-2">
+      <button
+        class="text-left text-2xs px-2 py-1 bg-bg-edge text-text-secondary hover:text-text-primary hover:bg-bg-muted rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-signalA"
+        type="button"
+        onclick={onCopyOrganism}
+        title="Copy the founders into the organism clipboard archive"
+      >
+        copy founders (C)
+      </button>
+      <button
+        class="text-left text-2xs px-2 py-1 bg-bg-edge text-text-secondary hover:text-text-primary hover:bg-bg-muted rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-signalA"
+        type="button"
+        onclick={onPasteOrganism}
+        title="Paste the organism clipboard archive at the world center"
+      >
+        paste organism (P)
+      </button>
+    </div>
   </section>
 
   <section class="rounded border border-bg-edge bg-bg-edge/30 p-2" aria-label="Parameters">

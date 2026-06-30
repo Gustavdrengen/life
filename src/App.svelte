@@ -11,7 +11,15 @@
     scatterClusteredFounders,
     stepOnce,
     setWorld,
-    Rng
+    Rng,
+    captureSnapshot,
+    restoreSnapshot,
+    snapshotToString,
+    snapshotFromString,
+    copyOrganism,
+    pasteOrganism,
+    clipboardToString,
+    clipboardFromString
   } from '$engine/core/index.js';
   import type { SimulationState } from '$engine/core/step.js';
   import type { ConfigKey } from '$lib/hud_types.js';
@@ -29,11 +37,19 @@
   let lastFpsSample = 0;
   let framesSinceSample = 0;
   let renderOpts: RenderOptions = $state({ ...DEFAULT_RENDER_OPTIONS });
+  // Live UI status string shown under the save/load buttons. Reports
+  // the last save/load/copy/paste operation so the user sees feedback.
+  let clipboardStatus = $state('clipboard: empty');
+  // The file input is rendered by App so HUD stays markup-only. Bind
+  // it; clicking the HUD's "load snapshot" triggers `.click()` on it.
+  let fileInput = $state<HTMLInputElement | null>(null);
+  const ORGANISM_STORAGE_KEY = 'ecosystem.organism.clipboard';
+  const SNAPSHOT_STORAGE_KEY = 'ecosystem.snapshot.last';
+
   // Live-editable HUD-bound config view. The engine owns the canonical
   // copy on `sim.world`; we mirror it here so Svelte's reactive layer can
   // detect edits without subscribing to the simulation state.
-  const sharedConfig = { ...DEFAULT_WORLD_CONFIG };
-  let config = $state({ ...sharedConfig });
+  let config = $state({ ...DEFAULT_WORLD_CONFIG });
   const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
   /** Number of founding clusters. ~3% of the population — small enough
    * for visible color separation, large enough that no cluster trivially
@@ -123,15 +139,144 @@
     rafHandle = requestAnimationFrame(loop);
   }
 
+  // ---------- snapshot / clipboard engine paths ----------
+
+  /** Gather the slots of all alive, non-dust particles. This is the
+   * MVP selection policy for "copy cluster" — without cluster detection
+   * or a click-drag rectangle (post-MVP), the entire surviving
+   * population is the unimodal selection. */
+  function collectAliveNonDustSlots(s: SimulationState): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < s.storage.capacity; i++) {
+      if (s.storage.alive[i] === 1 && s.storage.isDust[i] === 0) out.push(i);
+    }
+    return out;
+  }
+
+  function saveSnapshot(): void {
+    if (!sim) return;
+    try {
+      const env = captureSnapshot(sim);
+      const json = snapshotToString(env);
+      // Drop into localStorage so the user can restore across reloads
+      // without having opened the file from disk.
+      try {
+        globalThis.localStorage?.setItem(SNAPSHOT_STORAGE_KEY, json);
+      } catch {
+        // localStorage may be unavailable (private mode); tolerate.
+      }
+      clipboardStatus = `snapshot saved: tick ${env.tick}, ${env.activeCount} particles`;
+    } catch (e) {
+      clipboardStatus = `snapshot save failed: ${(e as Error).message}`;
+    }
+  }
+
+  function loadSnapshot(): void {
+    // Two paths: (1) re-use the last snapshot we put in localStorage;
+    // (2) read a file the user picked. HUD "load snapshot" just opens
+    // the file picker — we wire the picked-file reader here.
+    fileInput?.click();
+  }
+
+  async function loadSnapshotFromFile(file: File): Promise<void> {
+    try {
+      const json = await file.text();
+      const env = snapshotFromString(json);
+      if (!sim) {
+        clipboardStatus = 'snapshot load failed: simulation not ready';
+        return;
+      }
+      // Capacity mismatch? Rebuild a fresh sim with the saved capacity.
+      if (env.capacity !== sim.storage.capacity) {
+        sim = createSimulationState(env.capacity, { ...config }, env.rngSeed);
+        setWorld(sim, env.world);
+      } else {
+        restoreSnapshot(sim, env);
+      }
+      tick = sim.tick;
+      population = sim.storage.activeCount;
+      dustCt = countDust(sim);
+      config = { ...config, ...sim.world };
+      try {
+        globalThis.localStorage?.setItem(SNAPSHOT_STORAGE_KEY, json);
+      } catch {
+        // tolerated
+      }
+      clipboardStatus = `snapshot loaded: tick ${env.tick}, ${env.activeCount} particles`;
+    } catch (e) {
+      clipboardStatus = `snapshot load failed: ${(e as Error).message}`;
+    }
+  }
+
+  function copyCluster(): void {
+    if (!sim) return;
+    try {
+      const slots = collectAliveNonDustSlots(sim);
+      if (slots.length === 0) {
+        clipboardStatus = 'clipboard: no organisms to copy';
+        return;
+      }
+      const cb = copyOrganism(sim, slots);
+      const json = clipboardToString(cb);
+      try {
+        globalThis.localStorage?.setItem(ORGANISM_STORAGE_KEY, json);
+      } catch {
+        // tolerated
+      }
+      clipboardStatus = `clipboard: ${cb.count} organisms copied`;
+    } catch (e) {
+      clipboardStatus = `clipboard copy failed: ${(e as Error).message}`;
+    }
+  }
+
+  function pasteOrganismToWorld(): void {
+    if (!sim) return;
+    let raw: string | null = null;
+    try {
+      raw = globalThis.localStorage?.getItem(ORGANISM_STORAGE_KEY) ?? null;
+    } catch {
+      raw = null;
+    }
+    if (raw === null) {
+      clipboardStatus = 'clipboard: nothing to paste';
+      return;
+    }
+    try {
+      const cb = clipboardFromString(raw);
+      const dropX = sim.world.width / 2;
+      const dropY = sim.world.height / 2;
+      const slots = pasteOrganism(sim, cb, dropX, dropY);
+      population = sim.storage.activeCount;
+      clipboardStatus = `pasted ${slots.length} of ${cb.count} organisms at center`;
+    } catch (e) {
+      clipboardStatus = `clipboard paste failed: ${(e as Error).message}`;
+    }
+  }
+
   function onKey(e: KeyboardEvent): void {
-    if (e.key === ' ') {
+    if (e.code === 'Space') {
       e.preventDefault();
       paused = !paused;
     } else if (e.key === '.') {
       if (sim && paused) stepOnce(sim);
     } else if (e.key === 'r' || e.key === 'R') {
       resetWorld();
+    } else if (e.key === 's' || e.key === 'S') {
+      if (!e.ctrlKey && !e.metaKey) saveSnapshot();
+    } else if (e.key === 'c' || e.key === 'C') {
+      // Don't capture the browser's native Ctrl-C copy — only react on
+      // bare C so we don't trample text selection in inputs.
+      if (!e.ctrlKey && !e.metaKey) copyCluster();
+    } else if (e.key === 'p' || e.key === 'P') {
+      if (!e.ctrlKey && !e.metaKey) pasteOrganismToWorld();
     }
+  }
+
+  function onFileChange(e: Event): void {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // reset so reloading the same file still fires
+    if (file) void loadSnapshotFromFile(file);
   }
 
   $effect(() => {
@@ -169,12 +314,25 @@
       {config}
       paused={paused}
       initialPopulation={initialPopulation}
+      clipboardStatus={clipboardStatus}
       onReset={resetWorld}
       onStep={() => sim && stepOnce(sim)}
       onTogglePause={() => (paused = !paused)}
       onChangeConfig={changeConfig}
+      onSaveSnapshot={saveSnapshot}
+      onLoadSnapshot={loadSnapshot}
+      onCopyOrganism={copyCluster}
+      onPasteOrganism={pasteOrganismToWorld}
     />
   </div>
+  <input
+    type="file"
+    accept=".json,application/json"
+    class="hidden"
+    bind:this={fileInput}
+    onchange={onFileChange}
+    aria-hidden="true"
+  />
 </div>
 
 <style>
