@@ -75,6 +75,9 @@ export function particleColor(genomeRow: Float32Array | null): string {
 
 /** Dust coloring — fixed mute gray. */
 export const DUST_COLOR = '#3b4252';
+/** Organism cluster outline — low-saturation gray from VISION
+ * §Constraints colorblind palette. */
+export const ORGANISM_OUTLINE = PALETTE.organismOutline;
 
 void GENOME_LENGTH;
 

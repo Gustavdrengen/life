@@ -20,8 +20,9 @@
  * ImageData each frame — the underlying buffer is cheap and the GC
  * pressure is acceptable at 60 Hz.
  */
-import { PALETTE, particleColor, DUST_COLOR } from './palette.js';
+import { PALETTE, particleColor, DUST_COLOR, ORGANISM_OUTLINE } from './palette.js';
 import type { SimulationState } from '$engine/core/step.js';
+import { detectClusters } from '$engine/core/index.js';
 
 export interface RenderOptions {
   /** Filed drawing resolution — sub-samples the lattice to this many
@@ -33,13 +34,17 @@ export interface RenderOptions {
   showDust: boolean;
   /** Show signal field background (default true). */
   showField: boolean;
+  /** Show cluster-detection outlines highlighting emergent multi-cell
+   * organisms. Default true — free when clusters are absent. */
+  showClusters: boolean;
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   backgroundResolution: 192,
   particleRadius: 2.0,
   showDust: true,
-  showField: true
+  showField: true,
+  showClusters: true
 };
 
 export class Renderer {
@@ -84,6 +89,8 @@ export class Renderer {
     if (options.showField) this.drawFieldBackground(state);
 
     this.drawParticles(state);
+
+    if (options.showClusters) this.drawClusterOutlines(state);
   }
 
   private drawFieldBackground(state: SimulationState): void {
@@ -155,6 +162,33 @@ export class Renderer {
       ctx.fillStyle = isDust === 1 ? DUST_COLOR : particleColor(genomeRow);
       ctx.fillRect(px - r, py - r, 2 * r, 2 * r);
     }
+  }
+
+  /** Draw a low-saturation outline around each detected multi-cell
+   * cluster's bounding box. The outline color is intentionally
+   * contrast-shifted from the signal field so emergent organisms read
+   * at a glance — see PALETTE.organismOutline (VISION §Constraints
+   * colorblind palette). */
+  private drawClusterOutlines(state: SimulationState): void {
+    const { ctx, canvas } = this;
+    // Skip clusters analysis entirely if the population is tiny — the
+    // outline is meaningless on a near-empty world and adds N^2 work.
+    if (state.storage.activeCount < 4) return;
+    const clusters = detectClusters(state, { neighborRadius: 8, minClusterSize: 2 });
+    if (clusters.length === 0) return;
+    const sx = canvas.width / state.world.width;
+    const sy = canvas.height / state.world.height;
+    ctx.strokeStyle = ORGANISM_OUTLINE;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 2]);
+    for (const c of clusters) {
+      const x0 = Math.max(0, Math.floor(c.bbox.minX * sx));
+      const y0 = Math.max(0, Math.floor(c.bbox.minY * sy));
+      const x1 = Math.min(canvas.width - 1, Math.ceil(c.bbox.maxX * sx));
+      const y1 = Math.min(canvas.height - 1, Math.ceil(c.bbox.maxY * sy));
+      ctx.strokeRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
+    }
+    ctx.setLineDash([]);
   }
 }
 
