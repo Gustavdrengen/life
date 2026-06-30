@@ -10,6 +10,106 @@
 
 ## State of play
 
+### [2026-07-01] — acceptances + GPU scaffold session
+
+Continuation of the boot-fix session. This session lands the
+remaining VISION §Success acceptance tests and the WebGPU
+factory surface.
+
+- **What works**
+  - **Acceptance #2 + #9.** `src/engine/core/drift.ts` (with
+    `genomeStats`/`genomeDrift`/`personalityNorm`) plus
+    `specs/genome_drift.md`. 11 tests, all green in <200 ms.
+  - **Acceptance #3.** `src/engine/core/cluster_signature.ts`
+    plus `specs/signal_clustering.md` — sorted pairwise-distance
+    fingerprint for signal-driven shape comparison. 5 tests.
+  - **Acceptance #4.** `tests/engine/acceptance_predation.test.ts`
+    — fast predator cluster consumes slow prey on contact
+    (energy conserved within motion-dust tolerance), and a
+    perturbation control where the prey lineage grows in the
+    absence of predation.
+  - **Acceptance #5.** `tests/engine/acceptance_cluster.test.ts`
+    — on a 24-founder clustered world stepped 30 ticks,
+    `detectClusters` returns at least one cluster of size ≥ 2,
+    and clustered mass holds ≥ 20% of the alive non-dust
+    population.
+  - **Acceptance #6.** `tests/engine/acceptance_snapshot.test.ts`
+    — serialize → parse → restore round-trip is bit-perfect,
+    post-restore evolution is bit-identical under the same seed,
+    and the envelope survives multiple session boundaries.
+  - **Acceptance #7.** `tests/engine/acceptance_timeline.test.ts`
+    — scrub to a recorded tick produces a fingerprint identical
+    to that tick's snapshot; scrub past the latest recorded
+    tick clamps to recorded max (no replay); scrub below the
+    earliest returns null.
+  - **Acceptance #8.** `tests/engine/acceptance_export.test.ts`
+    — the single-file export round-trip produces a
+    self-contained, in-budget HTML file with no `/assets/`
+    references and the entry-point wiring in place.
+  - **Acceptance #10.** `tests/engine/acceptance_transplant.test.ts`
+    — pasted founders survive and produce a viable descendant
+    lineage (aliveness strictly grows, personality sub-norm
+    stays positive, drift against donor averages ≤ 0.05/slot).
+  - **GPU pipeline spec + factory surface.** `specs/gpu_pipeline.md`
+    lays out the buffer layout and compute pass order;
+    `src/engine/gpu/index.ts` exports `createGpuEngine` (with
+    `stepOnce`/`readState`/`writeState`/`beginRenderFrame`/
+    `endRenderFrame`/`destroy`/`isGpu`). The factory today
+    returns a CPU-backed stub whose `stepOnce` throws — wired
+    so the real WebGPU implementation lands behind the same
+    surface. 9 tests pin the factory contract.
+  - **App.svelte probes WebGPU on mount.** The HUD's help
+    section now shows `gpu: ready | stub (cpu) | cpu (no
+    WebGPU) | cpu (no adapter) | error (...)` so the user
+    can see whether WebGPU engaged. The App continues to
+    use the CPU reference engine — when the real WebGPU
+    pipeline lands, swapping `stepOnce(sim)` for
+    `gpuEngine?.stepOnce()` is a one-line change.
+- **What is broken, rough, or missing**
+  - **Tier 1 — real WebGPU compute + render pipeline.** The
+    factory surface is in place; the actual WGSL shaders
+    (clear, deposit, integrate, collision via spatial hash,
+    fission) and buffer upload logic are still the next
+    multi-session build. Until they land the live app runs
+    the CPU reference and the `live_cap` floor of 500 keeps
+    the page painting in one frame. The HUD's gpuStatus
+    indicator now makes that contract visible.
+  - **Visual evidence at the live GPU path.** Once the
+    real WebGPU pipeline lands, the visual capture harness
+    should write sidecar manifests that include
+    `engine=gpu|engine=cpu` so the headless capture
+    distinguishes the two paths.
+- **What is "there" in the code but feels bad to use**
+  - The `cluster_signature` comparison is a relative
+    threshold (5% of the smaller median). A more sensitive
+    gate (e.g. Wasserstein distance on the pairwise
+    distribution) would make the acceptance test stricter
+    but requires more math than the spec's "shape has moved"
+    acceptance warrants. Out of MVP scope; document for
+    later.
+- **What was not exercised this run**
+  - No headed-browser visual confirmation. The HUD's
+    gpuStatus indicator will surface in the next dev-server
+    smoke; until then the wire-up is on the contract side
+    only.
+  - GPU compute + render — by design this session landed
+    the spec + factory surface + App wire-up, but no
+    WGSL shaders were written.
+  - No multi-minute playtest tape. The acceptance tests
+    exercise the engine at small populations under
+    microsecond budgets; long-running selection pressure
+    (the VISION §5 "evolutionary dynamics over hours")
+    remains unobserved.
+
+This session's commits, oldest to newest:
+`4eddbe8 feat(metric): cluster-signature fingerprint`,
+`c1430bb test(acceptance #4): fast predator consumes slow prey`,
+`b941e51 test(acceptance #8): single-file HTML export round-trip`,
+`5ecc22b test(acceptance #6 + #7): snapshot bit-identity and timeline scrub`,
+`5bf8077 feat(gpu): WebGPU compute factory surface + acceptance contract`,
+`cb0da2c feat(gpu): App probes WebGPU adapter on mount, surfaces status in HUD`,
+`82f46cd test(clustering): read-then-write to satisfy noUncheckedIndexedAccess`.
+
 ### [2026-06-30] — fix-boot + drift-metric session
 
 User reported the live browser tab "loads indefinitely." Diagnosis:
