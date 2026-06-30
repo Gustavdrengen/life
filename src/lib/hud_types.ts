@@ -53,6 +53,12 @@ export interface HudProps {
   initialPopulation: number;
   /** Number of detected multi-cell clusters at the current tick. */
   clusterCount: number;
+  /** WebGPU adapter status surfaced for transparency: "gpu: ready"
+   *  if a real device was acquired, "gpu: stub (cpu)" if the
+   *  surface is the CPU-backed stub, "gpu: cpu (no WebGPU)" /
+   *  "gpu: cpu (no adapter)" if the browser lacks WebGPU, or
+   *  "gpu: error (...)" if adapter request failed. */
+  gpuStatus: string;
 }
 
 export type ConfigKey =

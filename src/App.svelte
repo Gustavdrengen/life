@@ -35,6 +35,7 @@
   import type { ConfigKey, InspectorView } from '$lib/hud_types.js';
   import { DEFAULT_RENDER_OPTIONS, Renderer, type RenderOptions } from '$lib/Renderer.js';
   import { liveInitialPopulation } from '$lib/live_cap.js';
+  import { createGpuEngine, type GpuEngine } from '$engine/gpu/index.js';
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let fps = $state(0);
@@ -44,6 +45,16 @@
   let paused = $state(false);
   let renderer: Renderer | null = null;
   let sim: SimulationState | null = null;
+  // Optional WebGPU engine. Acquired on mount if the browser exposes
+  // a GPUDevice; the App continues to use the CPU reference engine
+  // (`stepOnce(sim)`) until `gpuEngine.stepOnce` is implemented. The
+  // acquisition path is wired so the real WebGPU shaders can swap
+  // in by simply replacing the `stepOnce` call in `loop()`.
+  let gpuEngine: GpuEngine | null = null;
+  // Surface status: "gpu: ready" if WebGPU was acquired, "gpu: cpu
+  // (no WebGPU)" if the browser lacks the API, "gpu: error" if
+  // adapter request failed. Surfaced in the HUD for transparency.
+  let gpuStatus = $state('gpu: probing…');
   let rafHandle = 0;
   let lastFpsSample = 0;
   let framesSinceSample = 0;
@@ -445,12 +456,57 @@
     rafHandle = requestAnimationFrame(loop);
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', resizeCanvas);
+    // Best-effort WebGPU adapter acquisition. The factory surface
+    // is wired so the real WebGPU compute + render pipeline can
+    // swap in by replacing the `stepOnce(sim)` call in `loop()`
+    // with `gpuEngine?.stepOnce()`. Today the GPU path returns a
+    // CPU-backed stub whose `stepOnce` throws — so the App keeps
+    // using the CPU reference (the spec-authoritative source per
+    // `specs/gpu_pipeline.md §1`).
+    void acquireGpuEngine();
     return () => {
       cancelAnimationFrame(rafHandle);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', resizeCanvas);
+      gpuEngine?.destroy();
+      gpuEngine = null;
     };
   });
+
+  /** Probe for a WebGPU adapter and instantiate a `GpuEngine` if
+   *  one is available. The current GPU surface is a CPU-backed
+   *  stub; this function only sets the HUD's `gpuStatus` indicator
+   *  so the user can see whether the browser exposes WebGPU. When
+   *  the real WebGPU compute + render pipeline lands, the
+   *  `stepOnce` call in `loop()` will be conditional on the
+   *  acquired engine. */
+  async function acquireGpuEngine(): Promise<void> {
+    if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+      gpuStatus = 'gpu: cpu (no WebGPU)';
+      return;
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gpu = (navigator as any).gpu as { requestAdapter?: () => Promise<unknown> };
+      if (!gpu || typeof gpu.requestAdapter !== 'function') {
+        gpuStatus = 'gpu: cpu (no WebGPU)';
+        return;
+      }
+      const adapter = await gpu.requestAdapter();
+      if (!adapter) {
+        gpuStatus = 'gpu: cpu (no adapter)';
+        return;
+      }
+      // The adapter is real but `requestDevice` is a vendor-specific
+      // call that the stub doesn't need. Today the CPU-backed stub
+      // only requires a non-null `device`-shaped argument.
+      const fakeDevice = {} as unknown as GPUDevice;
+      gpuEngine = createGpuEngine(sim!, fakeDevice);
+      gpuStatus = gpuEngine.isGpu ? 'gpu: ready' : 'gpu: stub (cpu)';
+    } catch (e) {
+      gpuStatus = `gpu: error (${(e as Error).message ?? 'unknown'})`;
+    }
+  }
 </script>
 
 <div class="relative flex h-full w-full overflow-hidden bg-bg-base">
@@ -470,6 +526,7 @@
       {config}
       {inspector}
       {clusterCount}
+      {gpuStatus}
       paused={paused}
       initialPopulation={initialPopulation}
       clipboardStatus={clipboardStatus}

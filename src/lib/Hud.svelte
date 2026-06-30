@@ -27,7 +27,8 @@
     clipboardStatus,
     paused,
     initialPopulation,
-    clusterCount
+    clusterCount,
+    gpuStatus
   }: HudProps = $props();
 
   function fmt(value: number): string {
@@ -297,5 +298,6 @@
       The signal field is the gradient. The genome is the only dial.
       Cross-breeding is emergent. Click a particle to inspect.
     </p>
+    <p class="text-2xs text-text-muted mt-1 font-mono">{gpuStatus}</p>
   </section>
 </aside>
