@@ -19,3 +19,4 @@ export * from './clipboard.js';
 export * from './timeline.js';
 export * from './clusters.js';
 export * from './drift.js';
+export * from './cluster_signature.js';
