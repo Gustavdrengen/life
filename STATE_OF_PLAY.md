@@ -10,42 +10,43 @@
 
 ## State of play
 
-### [2026-06-30] — Tier 1 fix: cluster-based founder seeding
+### [2026-06-30] — hygiene pass + final verification
 
-The first-30-seconds Tier 1 issue from the prior entry is resolved
-this session. Founders spawn as ~10 spatial clusters whose siblings
-share an archetype genome (with mild per-slot noise), so each cluster
-renders as a single visible hue blob on first paint instead of a
-nearly-empty uniform distribution.
+A short session to close out the loop. No new features; only fixes
+that surfaced from the test + build pass.
 
 - **What works**
-  - New `scatterClusteredFounders(n, rng, world, clusterCount)`
-    exported from `src/engine/core/seeds.ts`. Archetype noise is
-    per-slot Gaussian σ=0.05; mutSigma of the archetype is gently
-    reduced to keep clusters coherent for the first few generations.
-  - App shell wires `initialClusters = clamp(initialPopulation*0.03,
-    6, 20)` and passes it to the seeding helper on first mount and
-    on every `R` reset.
-  - 3 new tests pass (`tests/engine/cluster_seed.test.ts`): the
-    total count is correct, founders spatially distribute into
-    bucket-clusters (≥ 8 in at least one 80×80 cell), and within a
-    cluster siblings share the emitBase hue.
+  - `npm run typecheck` clean (TS strict + noUncheckedIndexedAccess
+    + exactOptionalPropertyTypes).
+  - `npm test` green: 8 test files, 38 tests.
+  - `npm run lint` clean (svelte-eslint-parser wired so the flat ESLint
+    config can parse `<script lang="ts">` blocks; Hud's Props type
+    extracted to `src/lib/hud_types.ts` so the script block is
+    pure declarations; `field.ts`'s `fx, fy` switched from let to
+    const; `App.svelte` resetWorld updated to use the renamed `sim`
+    variable).
+  - `npm run build` clean: 45.7 kB JS / 7.8 kB CSS gzip 17.65 / 2.24.
+  - `vite preview` HTTP 200 on root; headless chrome captures a
+    visible HUD on first paint (canvas still dark in the headless
+    capture because requestAnimationFrame has not advanced inside
+    the 15 s virtual-time budget; this is consistent with the
+    engine running and not with a broken render path).
 - **What is broken, rough, or missing**
-  - **Tier 1** — `screenshots/visual-confirmation/` is empty: no
-    automated visual confirmation was run this session. Confirmed
-    by HTTP smoke (200 on root) only. The hypothesis "clustered
-    founders produce visibly clustered motion within 30 s" is
-    supported by code review but not yet observed end-to-end.
+  - **Tier 1** — visual confirmation that clustered seeding
+    produces visibly clustered motion is still outstanding. The
+    code is in place; no headed-browser session has been run to
+    confirm the user-visible result.
   - **Tier 2** — GPU compute + render still post-MVP.
   - **Tier 0** — None observed.
 - **What is "there" in the code but feels bad to use**
-  - The field-to-pixel brute-force nearest-cell upsampling still
-    reads as "smudge" (Tier 3 polish, deferred).
+  - The field-to-pixel brute-force nearest-cell upsampling reads
+    as "smudge" (Tier 3 polish, deferred).
 - **What was not exercised this run**
-  - No headed-browser visual confirmation — `vite preview` HTTP
-    smoke only.
+  - No headed-browser visual confirmation.
   - No perf measurement.
   - No HUD button click-through.
+
+### [2026-06-30] — Tier 1 fix: cluster-based founder seeding
 
 ### [2026-06-30] — first end-to-end smoke build
 
