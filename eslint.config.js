@@ -49,6 +49,10 @@ export default [
     files: ['tools/**/*.ts', 'tools/**/*.mjs'],
     languageOptions: {
       globals: { ...globals.node }
+    },
+    rules: {
+      // Build/CLI scripts talk back to the operator via `log`.
+      'no-console': 'off'
     }
   },
   {
