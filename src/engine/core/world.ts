@@ -38,6 +38,14 @@ export interface WorldConfig {
 
   /** Target population at MVP. */
   targetPopulation: number;
+
+  /**
+   * Dust energy decay rate, units of energy per second. Spec/VISION §Dust:
+   * the MVP default is `0` — dust never decays; it accumulates as part
+   * of the medium. Exposed for future tuning without breaking default
+   * behavior.
+   */
+  dustDecayPerSec: number;
 }
 
 export const DEFAULT_WORLD_CONFIG: Readonly<WorldConfig> = Object.freeze({
@@ -51,7 +59,8 @@ export const DEFAULT_WORLD_CONFIG: Readonly<WorldConfig> = Object.freeze({
   snapshotInterval: 60,
   fixedDt: 1 / 60,
   seed: 0xcafe_babe,
-  targetPopulation: 50_000
+  targetPopulation: 50_000,
+  dustDecayPerSec: 0
 });
 
 export function cloneWorldConfig(src: WorldConfig): WorldConfig {

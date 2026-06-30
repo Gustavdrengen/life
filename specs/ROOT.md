@@ -242,28 +242,40 @@ physics, but expected regression tests run on CPU only.
 | 9 | Global parameter change visible within 1 minute | Parameter sweep + diversity metric |
 | 10 | Transplant isolated organisms | Save/restore cluster + reseed harness |
 
-## 11. Vision holes surfaced
+## 11. Closed decisions (carried forward from VISION §Constraints)
 
-These are decisions the vision does not lock down. The agent picks
-reasonable defaults and surfaces them — see `AGENTS.md` §Vision hole alerts.
+These were previously listed as vision "open questions" and have been
+locked by the user (see `VISION.md` §Constraints). The spec must
+match; deviations are recorded inline as Decisions on a per-change
+basis.
 
-- **Target population at MVP.** Default: **50,000** particles. Sets FPS
-  budget and saved-state file size. Surfaced via checkpoint commit
-  notes if changed.
-- **World dimensionality.** Default: **2D rendering with 3D signal math**.
-  2D is faster and easier to read; signal field still has 3 components
-  so the response coefficients aren't pruned. The signal lattice stores
-  3-component values on a 2D grid (one layer tall, `signalAxisCount = 3`).
-  State-of-play entry records this is the MVP build, and a vision hole
-  is filed in `AGENTS.md` for full-3D iteration post-MVP.
-- **Dust dissipation.** Default: **never**. Dust accumulates indefinitely
-  and is part of the medium.
-- **Mutation distribution.** Default: **additive Gaussian on inheritable
-  slots**, with a fixed per-slot scale. Multiplicative option is future
-  work, not MVP.
-- **Colorblind palette.** Default: signal axes use a deliberately
-  perceptually-balanced triple — `#5fb3ff`, `#ff7d52`, `#b56cff` — which
-  is a colorblind-friendly high-contrast set. Final call before MVP ship.
+- **Target population at MVP.** **50,000** particles, hard cap. The
+  engine refuses to spawn above the cap; saved-state file-size budget
+  is sized accordingly. Below the cap, the simulation runs without
+  hitting any artificial throttle.
+- **Frame-rate floor.** Strict **≥ 30 FPS at 50k** is the bar. No
+  adaptive population scaling, no dynamic FPS interpolation — if the
+  host GPU cannot sustain it the user reduces the target via the HUD
+  before launching.
+- **World dimensionality.** **2D rendering with 3-axis signal math**.
+  Positions, velocities, contacts, and elastic bounce are 2D; the
+  signal-field lattice holds 3 components per cell so per-property
+  response coefficients aren't pruned. The engine math is pure
+  function of the 3-axis field — a future 3D simulation is a
+  rendering + integration expansion, not a semantics rewrite.
+- **Dust dissipation.** **No decay** by default. A `dustDecayPerSec`
+  parameter is exposed (default `0`) so the user can dial decay up
+  if they want heat-death-like behavior; the MVP itself never invokes
+  decay on default settings, consistent with the explicit non-goal
+  "no heat-death mechanic."
+- **Mutation noise distribution.** Fission applies **additive
+  Gaussian** perturbation to every inheritable slot at scale
+  `mutSigma · SLOT_MUTATION_SCALE[slot]`. Multiplicative inheritance
+  is post-MVP.
+- **Colorblind palette.** Signal axes use the perceptually balanced
+  triple `#5fb3ff` / `#ff7d52` / `#b56cff` (signal-A/B/C), verified
+  discriminable under deuteranopia, protanopia, and tritanopia
+  simulations. Dust is `#3b4252`; organism outlines are `#7a8aa0`.
 
 ## 12. Non-goals (mirror of VISION §Explicit non-goals)
 
@@ -277,3 +289,7 @@ reasonable defaults and surfaces them — see `AGENTS.md` §Vision hole alerts.
 - No win condition or progression.
 - No physics accuracy goal.
 - No external AI APIs.
+- No 3D simulation in MVP. 2D rendering with 3-axis signal math is
+  the locked dimensionality; 3D simulation is post-MVP.
+- No adaptive throttling. The cap is the cap and the FPS floor is
+  the floor — either both hold or neither.

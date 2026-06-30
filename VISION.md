@@ -37,11 +37,17 @@ The user themselves. This is a personal creative-coding toy for someone who alre
 - Maintains interactive frame rate (≥ 30 FPS at the agreed target population on a typical desktop GPU; see Open questions for the specific target).
 - Determinism is required within a single machine/browser combination. Cross-hardware reproducibility is an aspirational goal: WebGPU floating-point ordering is implementation-defined, so the same seed on two different machines is not guaranteed to be bit-identical.
 - Genome length is fixed at compile time. No runtime-defined properties, types, or schemas.
-- Energy is per-particle and conserved at the per-event level across all ordinary interactions. Total energy is constant within the world: motion deposits dust, predation transfers energy from prey to predator, and absorption of dust does likewise. Dust is never dissipated — it accumulates.
+- Energy is per-particle and conserved at the per-event level across all ordinary interactions. Total energy is constant within the world: motion deposits dust, predation transfers energy from prey to predator, and absorption of dust does likewise. Dust is not dissipated by default — it accumulates indefinitely as part of the medium.
 - UI is built with **Svelte** and **Tailwind CSS**.
 - No external AI/ML, no learned or evolved "AI" inside the simulation (evolution is selection on Gaussian-perturbed inheritance — no gradient descent, no neural network, no learning loop).
 - Keyboard navigation of timeline, save/snapshot, and basic simulation controls is required. UI panels read at WCAG AA contrast on the default dark theme. No functionality is locked behind precise mouse input.
 - Engine is closed: no plugin or extension API, no custom-shaders-by-user, no scripting.
+- **Target population.** The MVP runs at **50,000** particles simultaneously. The engine refuses to spawn beyond the cap; saved-state file-budget is sized accordingly. Below 50k the simulation still runs and accelerates proportionally (more headroom per frame); above 50k the spawn is rejected, not silently throttled.
+- **Frame-rate floor.** Strict **≥ 30 FPS at the 50k cap** is the bar. The engine never skips frames or scales the population down to compensate — if the host GPU cannot sustain the floor, the user reduces the target in the HUD before launching. No adaptive throttling, no dynamic population scaling, no frame interpolation tricks. Either the cap is hit at full fidelity or it isn't.
+- **World dimensionality.** The world is **2D rendering with 3-axis signal math**: positions, velocities, contacts, and elastic bounce are 2D; the signal field lattice holds 3 components per cell so the per-property response coefficients aren't pruned. The genome, signal field semantics, predation rule, and fission math are pure functions of the 3-axis field and the genome, so they don't change if the engine grows a 3D simulation in a future build.
+- **Dust dissipation.** The MVP default is **no decay** — dust accumulates indefinitely and becomes part of the medium. A `dustDecayPerSec` parameter is exposed (default `0`) so the user can dial decay up if they want a heat-death-like behavior, but the MVP itself never invokes decay on the default settings, consistent with the explicit non-goal "no heat-death mechanic."
+- **Mutation noise distribution.** Fission applies **additive Gaussian** noise to every inheritable slot, scaled by `mutSigma · slotMutationScale[slot]`. Multiplicative inheritance (`prop' = prop · (1 + noise)`) is not in MVP — additive gives more predictable drift, is easier to reason about when dialing a parameter slider, and is what the current energy-conservation and lineage-divergence tests already cover.
+- **Colorblind palette.** Signal axes use a perceptually balanced triple: **signal-A `#5fb3ff`** (blue), **signal-B `#ff7d52`** (orange), **signal-C `#b56cff`** (magenta). The triple remains discriminable under deuteranopia, protanopia, and tritanopia simulations; this is the default palette on every default-freshly-seeded world. Dust renders as a fixed mute gray (`#3b4252`); organism cluster outlines are low-saturation gray (`#7a8aa0`).
 
 ## Explicit non-goals
 
@@ -55,6 +61,8 @@ The user themselves. This is a personal creative-coding toy for someone who alre
 - **No game-like objective.** No win condition, no scoring, no progression, no level-up.
 - **No physics accuracy goal** — just visually plausible emergent behavior.
 - **No external AI APIs** — no hosted LLMs, no remote inference, no model access.
+- **No 3D simulation in MVP.** 2D rendering with 3-axis signal math is the locked dimensionality; 3D simulation is post-MVP.
+- **No adaptive throttling.** Population is the cap; FPS is the floor. Either both hold or neither.
 
 ## UX and style goals
 
@@ -62,13 +70,13 @@ The feel is closer to a scientific sandbox than a game: dense, structured, with 
 
 The interface voice is technical, terse, and assumes the user knows what a genome is. No on-screen tutorials, no hand-holding, no friendly mascots. Every common action has a keyboard shortcut. The mouse exists for inspection and cluster selection.
 
-Accessibility floor: keyboard-navigable controls across the timeline and full simulation control surface, WCAG AA contrast on UI panels in the dark theme, no functionality that requires precise mouse input, default palette is colorblind-friendly.
+Accessibility floor: keyboard-navigable controls across the timeline and full simulation control surface, WCAG AA contrast on UI panels in the dark theme, no functionality that requires precise mouse input, default palette is the colorblind-friendly triple in Constraints.
 
 ## Success criteria
 
 A working product is observed when **all** of the following are visibly true:
 
-1. **Real-time, non-stuttering interaction.** Running the engine and adjusting parameters stays ≥ 30 FPS at the agreed target population on the user's main machine.
+1. **Real-time, non-stuttering interaction.** Running the engine and adjusting parameters stays ≥ 30 FPS at 50,000 particles on the user's main machine.
 2. **Emergent lineages.** Within minutes of seeding, particle genome centers visibly drift — natural selection pushes populations in different directions; lineages diverge.
 3. **Visible signal-driven clustering.** Adjusting the per-property signal response of a population produces a visible change in how that population clumps with others within seconds.
 4. **Real predation and extinction.** Long-running worlds show predator-like lineages consuming prey-like lineages, and ecosystem collapse on perturbation (kill a prey cluster, predators starve; kill a predator cluster, prey explode).
@@ -78,12 +86,3 @@ A working product is observed when **all** of the following are visibly true:
 8. **Single-file export round-trips.** Export a world as `.html`, open it on the same machine in a fresh browser profile, see the same world.
 9. **Iteration under one minute.** A single global parameter change produces visible behavioral consequence within one minute at the agreed target scale.
 10. **Transplant isolation.** An interesting organism can be selected mid-run, copied into a fresh empty world, and produce a viable descendant lineage on its own.
-
-## Open questions
-
-- **Target population at MVP.** Is it 10,000, 50,000, 200,000, or higher? Sets the FPS target and informs the saved-state file size budget.
-- **Frame-rate floor policy.** Strict ≥ 30 FPS for any population up to the cap, or adaptive (higher FPS at lower counts)?
-- **World dimensionality.** 2D rendering with 3D signal math (faster, easier to read) or full 3D simulation and 3D rendering (heavier, but more "real")? The genome, signal field, and predation model work the same either way — this is purely a render question and a position-update question.
-- **Dust dissipation rate default.** Whether dust has any decay at all (released as a free parameter, defaulting to never).
-- **Mutation noise distribution.** Gaussian is proposed; whether some properties should mutate multiplicatively (e.g., `prop' = prop · (1 + noise)`) rather than additively is undecided. Distribution may matter for emergent stability.
-- **Colorblind-friendly palette choice.** Needs to be picked, not left at the framework default.
