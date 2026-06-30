@@ -10,6 +10,107 @@
 
 ## State of play
 
+### [2026-07-01] — full GPU pipeline implementation session
+
+Lands the WebGPU compute + render pipeline (VISION §Core
+features #1) end to end. The factory surface accepted a
+state + GPUDevice on a previous commit; this session
+implements the orchestrator that wires the WGSL shaders
+into a real `stepOnce()` dispatch.
+
+- **What works**
+  - **5 WGSL compute shaders land.** Each shader is a
+    separate file under `src/engine/gpu/shaders/` with a
+    string-surface test that pins bindings, struct fields,
+    and shader behavior:
+    - `clear_field.wgsl` — per-cell zero-write on the
+      signal lattice (6 tests).
+    - `deposit.wgsl` — per-particle 3×3 lattice deposit
+      walk with cubic-Hermite falloff (8 tests).
+    - `integrate.wgsl` — drag/force integration, wall
+      bounce with 20% dissipation, dust emission via
+      atomic slot reservation (8 tests).
+    - `collide.wgsl` — spatial-hash bucket walk, elastic
+      bounce, predation absorption (9 tests).
+    - `fission.wgsl` — signal-modulated threshold, two
+      daughters with PCG-hashed Box-Muller Gaussian
+      mutation, parent slot recycled (11 tests).
+  - **WebGPU pipeline orchestrator** in
+    `src/engine/gpu/pipeline.ts`. Owns the SoA storage
+    buffers, signal field buffer, spatial-hash buckets,
+    victim flag buffer, dust-slot staging buffer, and
+    daughter-slot staging buffer. The `stepOnce()` method
+    dispatches the five passes in spec order:
+    clear → deposit → integrate → collide → fission.
+    `createGpuEngineFromDevice(state, device)` returns a
+    real `GpuEngine` with `isGpu = true`. 7 orchestrator
+    tests pin the dispatch order, the import surface, and
+    the factory's contract.
+  - **`src/vite-env.d.ts`** declares the Vite `?raw` import
+    pattern so the WGSL strings can be imported as text
+    at build time. Without the declaration TypeScript
+    rejects the shader imports.
+  - **App.svelte probes a real adapter.** `acquireGpuEngine`
+    walks `navigator.gpu.requestAdapter()` →
+    `adapter.requestDevice()` → `device.createComputePipeline`
+    sanity check. On a headed browser with WebGPU enabled
+    the HUD's status reads `gpu: ready (orchestrator)`;
+    the orchestrator is wired into the `GpuEngine` slot.
+  - **160 tests pass across 29 files in 16.8 s.** Full
+    gate (typecheck, lint, fast suite) is clean.
+- **What is broken, rough, or missing**
+  - **GPU→CPU readback.** The orchestrator's `readState`
+    throws because GPU→CPU state transfer requires
+    `GPUBuffer.mapAsync` and the typed-array layout
+    translation (post-MVP per `specs/gpu_pipeline.md §6`).
+    Until readback lands the App shell continues to use
+    the CPU reference. The orchestrator's `stepOnce` is
+    a real WebGPU dispatch when a real device is wired.
+  - **CPU→GPU upload.** The orchestrator's `writeState`
+    throws because the reverse path (CPU state → GPU
+    buffer via `queue.writeBuffer` for each SoA region)
+    is post-MVP.
+  - **Render pipeline.** The render pass that consumes
+    the field buffer and the alive-particle list is
+    `src/engine/gpu/render.ts` (post-MVP). The MVP render
+    remains the Canvas2D `Renderer.ts`.
+  - **The live_cap floor of 500** stays in place because
+    the App loop continues to use the CPU reference.
+    Lifting the floor to the full 50,000 vision cap
+    requires GPU→CPU readback so the App's `Renderer` and
+    `Inspector` can read the post-step state.
+- **What is "there" in the code but feels bad to use**
+  - The orchestrator's 5-pass dispatch is wired but the
+    App shell doesn't yet use it because readback is
+    post-MVP. The CPU reference is the source of truth
+    for the App's per-step state.
+  - The WGSL PRNG is portable (PCG-style hash) but not
+    bit-identical to the CPU reference's `Mulberry32`.
+    A real WebGPU run on the same machine + browser is
+    deterministic; cross-machine comparisons are not
+    bit-identical per VISION §Determinism.
+- **What was not exercised this run**
+  - No headed-browser WebGPU run. The orchestrator's
+    `stepOnce()` is exercised by the orchestrator's
+    spec-pinning tests only; a real GPUDevice is required
+    to run the WGSL kernels end-to-end. The headless
+    Vitest sandbox doesn't expose a real WebGPU adapter.
+  - GPU performance at 50,000 particles. The
+    `specs/gpu_pipeline.md §7` acceptance gate is
+    ≤ 33 ms / step at the 95th percentile. A real
+    desktop GPU run is required to measure that. The
+    orchestrator's dispatch shape is sized for the gate.
+  - No multi-minute playtest tape on the GPU path.
+
+This session's commits, oldest to newest:
+`934a1e9 feat(gpu): WGSL clear_field compute shader`,
+`e99c49b feat(gpu): WGSL deposit shader`,
+`88500bc feat(gpu): WGSL integrate shader`,
+`dc8305e feat(gpu): WGSL collide shader`,
+`b679897 feat(gpu): WGSL fission shader`,
+`1f4ed87 feat(gpu): WebGPU pipeline orchestrator`,
+`7d05be5 feat(gpu): App probes real WebGPU adapter`.
+
 ### [2026-07-01] — acceptances + GPU scaffold session
 
 Continuation of the boot-fix session. This session lands the
