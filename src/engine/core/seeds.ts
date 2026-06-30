@@ -119,3 +119,72 @@ export function scatterFounders(
   }
   return out;
 }
+
+/**
+ * Cluster-based founder seeding. Particles are grouped into `clusterCount`
+ * clusters, each cluster centered on a single point inside the world
+ * with `~clusterSize` siblings. All siblings in a cluster share a
+ * genealogically close genome — a single "archetype" is drawn, and each
+ * sibling receives it with mild per-slot Gaussian noise.
+ *
+ * This produces visible motion and clustering within the first ~60 ticks
+ * instead of waiting for accumulated drift, and gives the user an
+ * immediate sense of how lineages diverge under selection pressure.
+ * Effective T0/T1 fix for the "quiet first 30 seconds" symptom.
+ */
+export function scatterClusteredFounders(
+  totalCount: number,
+  rng: Rng,
+  world: WorldDims,
+  clusterCount: number,
+  dist: Distribution = DEFAULT_DISTRIBUTION
+): Founder[] {
+  if (clusterCount <= 0) throw new RangeError('clusterCount must be > 0');
+  const out: Founder[] = [];
+  const perCluster = Math.max(1, Math.floor(totalCount / clusterCount));
+  for (let c = 0; c < clusterCount; c++) {
+    // Pick a cluster center inside the world with a comfortable margin.
+    const margin = Math.min(world.width, world.height) * 0.08;
+    const cx = rng.range(margin, world.width - margin);
+    const cy = rng.range(margin, world.height - margin);
+    const archetype = makeFounderGenome(rng, dist);
+    // Bump archetype's mutateSigma modestly down — we want clusters
+    // to stay coherent for a few generations, not dissolve instantly.
+    archetype[GENOME.mutSigma] = (archetype[GENOME.mutSigma] ?? 0.05) * 0.8;
+    const jx = rng.signed();
+    const jy = rng.signed();
+    for (let k = 0; k < perCluster && out.length < totalCount; k++) {
+      const radius = Math.min(world.width, world.height) * rng.range(0.01, 0.05);
+      const ang = rng.range(0, Math.PI * 2);
+      out.push({
+        x: cx + Math.cos(ang) * radius,
+        y: cy + Math.sin(ang) * radius,
+        vx: jx * 2,
+        vy: jy * 2,
+        energy: 1.0,
+        genomeRow: noiseGenomeRow(archetype, rng, ARCHETYPE_NOISE)
+      });
+    }
+  }
+  return out;
+}
+
+/** Per-slot Gaussian noise scale applied when copying an archetype to a sibling. */
+const ARCHETYPE_NOISE = 0.05;
+
+function noiseGenomeRow(
+  archetype: Float32Array,
+  rng: Rng,
+  scale: number
+): Float32Array {
+  const row = new Float32Array(archetype.length);
+  for (let i = 0; i < archetype.length; i++) {
+    const a = archetype[i] ?? 0;
+    if (i === GENOME.velAxisBias) {
+      row[i] = a; // categorical
+      continue;
+    }
+    row[i] = a + rng.gaussian(0, scale);
+  }
+  return row;
+}

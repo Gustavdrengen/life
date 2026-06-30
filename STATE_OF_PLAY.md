@@ -10,6 +10,43 @@
 
 ## State of play
 
+### [2026-06-30] — Tier 1 fix: cluster-based founder seeding
+
+The first-30-seconds Tier 1 issue from the prior entry is resolved
+this session. Founders spawn as ~10 spatial clusters whose siblings
+share an archetype genome (with mild per-slot noise), so each cluster
+renders as a single visible hue blob on first paint instead of a
+nearly-empty uniform distribution.
+
+- **What works**
+  - New `scatterClusteredFounders(n, rng, world, clusterCount)`
+    exported from `src/engine/core/seeds.ts`. Archetype noise is
+    per-slot Gaussian σ=0.05; mutSigma of the archetype is gently
+    reduced to keep clusters coherent for the first few generations.
+  - App shell wires `initialClusters = clamp(initialPopulation*0.03,
+    6, 20)` and passes it to the seeding helper on first mount and
+    on every `R` reset.
+  - 3 new tests pass (`tests/engine/cluster_seed.test.ts`): the
+    total count is correct, founders spatially distribute into
+    bucket-clusters (≥ 8 in at least one 80×80 cell), and within a
+    cluster siblings share the emitBase hue.
+- **What is broken, rough, or missing**
+  - **Tier 1** — `screenshots/visual-confirmation/` is empty: no
+    automated visual confirmation was run this session. Confirmed
+    by HTTP smoke (200 on root) only. The hypothesis "clustered
+    founders produce visibly clustered motion within 30 s" is
+    supported by code review but not yet observed end-to-end.
+  - **Tier 2** — GPU compute + render still post-MVP.
+  - **Tier 0** — None observed.
+- **What is "there" in the code but feels bad to use**
+  - The field-to-pixel brute-force nearest-cell upsampling still
+    reads as "smudge" (Tier 3 polish, deferred).
+- **What was not exercised this run**
+  - No headed-browser visual confirmation — `vite preview` HTTP
+    smoke only.
+  - No perf measurement.
+  - No HUD button click-through.
+
 ### [2026-06-30] — first end-to-end smoke build
 
 This is the opening observation. Captured immediately after the

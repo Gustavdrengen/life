@@ -8,7 +8,7 @@
     DEFAULT_WORLD_CONFIG,
     createSimulationState,
     spawnParticle,
-    scatterFounders,
+    scatterClusteredFounders,
     stepOnce,
     type SimulationState,
     Rng
@@ -28,12 +28,21 @@
   let framesSinceSample = 0;
   let renderOpts: RenderOptions = $state({ ...DEFAULT_RENDER_OPTIONS });
   const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
+  /** Number of founding clusters. ~3% of the population — small enough
+   * for visible color separation, large enough that no cluster trivially
+   * starves. */
+  const initialClusters = Math.max(6, Math.min(20, Math.floor(initialPopulation * 0.03)));
 
   function resetWorld(): void {
     if (!state) return;
     const seed = state.rng.snapshot();
     state = createSimulationState(64_000, { ...DEFAULT_WORLD_CONFIG }, seed);
-    scatterFounders(initialPopulation, state.rng, state.world).forEach((f) => {
+    scatterClusteredFounders(
+      initialPopulation,
+      state.rng,
+      state.world,
+      initialClusters
+    ).forEach((f) => {
       spawnParticle(state!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
     });
     tick = 0;
@@ -91,7 +100,7 @@
     renderer = new Renderer(canvas);
     sim = createSimulationState(64_000, { ...DEFAULT_WORLD_CONFIG }, DEFAULT_WORLD_CONFIG.seed);
     const rng = new Rng(sim.rng.snapshot());
-    scatterFounders(initialPopulation, rng, sim.world).forEach((f) => {
+    scatterClusteredFounders(initialPopulation, rng, sim.world, initialClusters).forEach((f) => {
       spawnParticle(sim!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
     });
     population = sim.storage.activeCount;
