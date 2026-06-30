@@ -19,7 +19,13 @@
     copyOrganism,
     pasteOrganism,
     clipboardToString,
-    clipboardFromString
+    clipboardFromString,
+    createTimeline,
+    maybeRecordSnapshot,
+    restoreAtTick,
+    truncateAfter,
+    lastEntry,
+    type Timeline
   } from '$engine/core/index.js';
   import type { SimulationState } from '$engine/core/step.js';
   import type { ConfigKey } from '$lib/hud_types.js';
@@ -50,11 +56,26 @@
   // copy on `sim.world`; we mirror it here so Svelte's reactive layer can
   // detect edits without subscribing to the simulation state.
   let config = $state({ ...DEFAULT_WORLD_CONFIG });
+  // The deterministic timeline snapshot ring (VISION §9). Plain
+  // mutable object — Svelte reactivity only needs scrubRange.
+  let timeline: Timeline = createTimeline();
+  let scrubRange = $state<[number, number]>([0, 0]);
   const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
   /** Number of founding clusters. ~3% of the population — small enough
    * for visible color separation, large enough that no cluster trivially
    * starves. */
   const initialClusters = Math.max(6, Math.min(20, Math.floor(initialPopulation * 0.03)));
+
+  function refreshScrubRange(): void {
+    const last = lastEntry(timeline);
+    scrubRange = [0, last?.tick ?? 0];
+  }
+
+  function recordNow(force = true): void {
+    if (!sim) return;
+    maybeRecordSnapshot(sim, sim.world, timeline, force);
+    refreshScrubRange();
+  }
 
   function rebuildFromSeed(seed: number): void {
     if (!sim) return;
@@ -68,12 +89,34 @@
     tick = 0;
     population = sim.storage.activeCount;
     dustCt = countDust(sim);
+    timeline = createTimeline();
+    recordNow(true);
   }
 
   function resetWorld(): void {
     if (!sim) return;
     const seed = sim.rng.snapshot();
     rebuildFromSeed(seed);
+  }
+
+  /** Place the live simulation on the snapshot ≤ `targetTick`. Pauses
+   * the play loop because forward advancement from a non-current tick
+   * belongs to the user's resume decision. */
+  function scrubTo(targetTick: number): void {
+    if (!sim) return;
+    if (lastEntry(timeline) === null) {
+      // No snapshots recorded yet (e.g. fresh boot); refresh button
+      // surface so the user knows nothing was there.
+      return;
+    }
+    paused = true;
+    const restored = restoreAtTick(sim, timeline, targetTick);
+    if (restored !== null) {
+      tick = sim.tick;
+      population = sim.storage.activeCount;
+      dustCt = countDust(sim);
+      clipboardStatus = `scrubbed to tick ${restored}`;
+    }
   }
 
   /** Editable arithmetic limit for a HUD parameter. */
@@ -92,16 +135,20 @@
     return Math.max(lo, Math.min(hi, raw));
   }
 
-  /** HUD → engine wiring. Edits to latticeResolution recreate the field
-   * (handled by setWorld). Other edits only mutate the world dims in
-   * place. We rebuild the simulation so the changed cutoff takes visible
-   * effect immediately rather than drifting through stale emitter lobes. */
+  /** HUD → engine wiring. Edits invalidate the forward part of the
+   * timeline per VISION §9 ("Edits invalidate forward state and resume
+   * the playback from the new scratch point"). The replaced live sim
+   * is rebuilt from the post-edit seed so the change takes visible
+   * effect immediately. */
   function changeConfig(key: ConfigKey, value: number): void {
     if (!sim) return;
     const next = { ...config, [key]: clamp(key, value) };
     if (next[key] === config[key]) return; // no-op when clamp rejected it
     config = next;
     setWorld(sim, next);
+    // Invalidate forward snapshots beyond the current head.
+    const head = sim.tick;
+    truncateAfter(timeline, head);
     rebuildFromSeed(sim.rng.snapshot());
   }
 
@@ -124,6 +171,11 @@
       // 2 ticks per frame — keeps things visibly alive without
       // overwhelming the CPU.
       for (let i = 0; i < 2; i++) stepOnce(sim);
+      // Record at the snapshotInterval boundary so the timeline stays
+      // populated while the engine runs. power-of-two false positive
+      // costs nothing past a duplicate-tick overwrite.
+      maybeRecordSnapshot(sim, sim.world, timeline);
+      refreshScrubRange();
     }
     renderer.render(sim, renderOpts);
     tick = sim.tick;
@@ -165,6 +217,9 @@
       } catch {
         // localStorage may be unavailable (private mode); tolerate.
       }
+      // Records the snapshot both as the user's intent and adds an
+      // explicit timeline entry beyond the current head.
+      recordNow(true);
       clipboardStatus = `snapshot saved: tick ${env.tick}, ${env.activeCount} particles`;
     } catch (e) {
       clipboardStatus = `snapshot save failed: ${(e as Error).message}`;
@@ -193,6 +248,9 @@
       } else {
         restoreSnapshot(sim, env);
       }
+      // Replace forward state — the loaded snapshot IS the new head.
+      timeline = createTimeline();
+      recordNow(true);
       tick = sim.tick;
       population = sim.storage.activeCount;
       dustCt = countDust(sim);
@@ -247,6 +305,9 @@
       const dropY = sim.world.height / 2;
       const slots = pasteOrganism(sim, cb, dropX, dropY);
       population = sim.storage.activeCount;
+      // Paste is a user action — capture it on the timeline and
+      // forward-state invalidate beyond the now-edited head.
+      recordNow(true);
       clipboardStatus = `pasted ${slots.length} of ${cb.count} organisms at center`;
     } catch (e) {
       clipboardStatus = `clipboard paste failed: ${(e as Error).message}`;
@@ -290,6 +351,8 @@
     });
     population = sim.storage.activeCount;
     dustCt = countDust(sim);
+    timeline = createTimeline();
+    recordNow(true);
     resizeCanvas();
     lastFpsSample = performance.now();
     rafHandle = requestAnimationFrame(loop);
@@ -315,6 +378,7 @@
       paused={paused}
       initialPopulation={initialPopulation}
       clipboardStatus={clipboardStatus}
+      scrubRange={scrubRange}
       onReset={resetWorld}
       onStep={() => sim && stepOnce(sim)}
       onTogglePause={() => (paused = !paused)}
@@ -323,6 +387,7 @@
       onLoadSnapshot={loadSnapshot}
       onCopyOrganism={copyCluster}
       onPasteOrganism={pasteOrganismToWorld}
+      onScrubTo={scrubTo}
     />
   </div>
   <input

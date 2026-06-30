@@ -20,6 +20,8 @@
     onLoadSnapshot,
     onCopyOrganism,
     onPasteOrganism,
+    onScrubTo,
+    scrubRange,
     clipboardStatus,
     paused,
     initialPopulation
@@ -143,6 +145,32 @@
     >
       reset world (R)
     </button>
+  </section>
+
+  <section
+    class="rounded border border-bg-edge bg-bg-edge/30 p-2"
+    aria-label="Timeline scrubber"
+  >
+    <h2 class="text-2xs uppercase tracking-widest text-text-secondary mb-1">Timeline</h2>
+    <div class="flex items-center justify-between text-2xs text-text-muted mb-1 font-mono">
+      <span>{scrubRange[0]}</span>
+      <span class="text-text-primary">→ {scrubRange[1]}</span>
+    </div>
+    <input
+      type="range"
+      min={scrubRange[0]}
+      max={scrubRange[1]}
+      step="1"
+      value={tick}
+      oninput={(e) => onScrubTo(Number((e.currentTarget as HTMLInputElement).value))}
+      class="w-full accent-accent-signalA"
+      aria-label="Scrub to tick"
+      title="Drag to scrub through recorded snapshots"
+      disabled={scrubRange[1] <= scrubRange[0]}
+    />
+    <p class="text-2xs text-text-muted mt-1">
+      Scrub snaps each recorded snapshot.
+    </p>
   </section>
 
   <section class="rounded border border-bg-edge bg-bg-edge/30 p-2" aria-label="Save / load">

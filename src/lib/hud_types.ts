@@ -7,6 +7,7 @@ export type SaveSnapshot = () => void;
 export type LoadSnapshot = () => void;
 export type CopyOrganism = () => void;
 export type PasteOrganism = () => void;
+export type ScrubTo = (tick: number) => void;
 
 export interface HudProps {
   fps: number;
@@ -29,6 +30,9 @@ export interface HudProps {
   onLoadSnapshot: LoadSnapshot;
   onCopyOrganism: CopyOrganism;
   onPasteOrganism: PasteOrganism;
+  onScrubTo: ScrubTo;
+  /** Bounds the slider can scrub through. <tick, maxTick>. */
+  scrubRange: readonly [number, number];
   clipboardStatus: string;
   paused: boolean;
   initialPopulation: number;
