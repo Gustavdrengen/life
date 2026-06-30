@@ -17,3 +17,4 @@ export * from './step.js';
 export * from './snapshot.js';
 export * from './clipboard.js';
 export * from './timeline.js';
+export * from './clusters.js';
