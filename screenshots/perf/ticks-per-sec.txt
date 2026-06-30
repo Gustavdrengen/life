@@ -2,7 +2,7 @@
 # target — see VISION §Constraints. Measurements here are CPU reference only and
 # exist to size the headroom the GPU implementation must beat.
 # population	ticks	elapsed_ms	ticks_per_sec
-1000	30	24624.1	1.22
-5000	30	96401.9	0.31
-10000	30	221151.7	0.14
+1000	30	25334.8	1.18
+5000	30	89551.0	0.34
+10000	30	225043.7	0.13
 50000	N/A	N/A	GPU-spec-ceiling-30fps
