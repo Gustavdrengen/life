@@ -51,11 +51,15 @@ function buildState(seed: number, responseMode: 'baseline' | 'unresponsive' | 'a
     } else if (responseMode === 'amplified') {
       // Both additive and multiplicative coefficients scaled 4× —
       // the gradient bends more strongly under the same emitted
-      // field, producing measurable shape divergence.
+      // field, producing measurable shape divergence. Read-then-write
+      // to satisfy noUncheckedIndexedAccess — the assignment form
+      // `row[i] *= 4` would treat the LHS as `number | undefined`.
       for (let axis = 0; axis < 3; axis++) {
         for (let personality = 0; personality < 8; personality++) {
-          row[GENOME.addOffset + personality * 3 + axis] *= 4;
-          row[GENOME.mulOffset + personality * 3 + axis] *= 4;
+          const addIdx = GENOME.addOffset + personality * 3 + axis;
+          const mulIdx = GENOME.mulOffset + personality * 3 + axis;
+          row[addIdx] = (row[addIdx] ?? 0) * 4;
+          row[mulIdx] = (row[mulIdx] ?? 0) * 4;
         }
       }
     }
@@ -130,6 +134,11 @@ describe('acceptance #3: signal-driven clustering', () => {
     );
     const medB = sB!.pairwiseDistanceSq[Math.floor(len / 2)] ?? 1;
     const medU = sU!.pairwiseDistanceSq[Math.floor(len / 2)] ?? 1;
+    // Both medians must be finite; if either is 0 (e.g. all
+    // particles at the same coordinate) the relative-epsilon gate
+    // collapses to zero and the test can't measure a shape change.
+    expect(Number.isFinite(medB)).toBe(true);
+    expect(Number.isFinite(medU)).toBe(true);
     const medianBaseline = Math.min(medB, medU);
     // Relative threshold anchored to the smaller median so the test
     // survives geometric scale changes.
