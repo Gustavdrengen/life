@@ -10,6 +10,120 @@
 
 ## State of play
 
+### [2026-06-30] — fix-boot + drift-metric session
+
+User reported the live browser tab "loads indefinitely." Diagnosis:
+`App.svelte` was booting with `initialPopulation = 50_000` (the vision
+cap on `DEFAULT_WORLD_CONFIG.targetPopulation`) running on the CPU
+reference whose collision pass is O(N²). At 50k founders the first
+tick chewed through >10 s of wall-clock on commodity CPU and blocked
+the main thread before any frame painted. The user, watching the
+tab spin, had no way to know the engine wasn't broken.
+
+This session fixes that and pushes the remaining Tier-2 acceptance
+criteria for the metric-driven part of the vision.
+
+- **What works**
+  - **Tier 0 fix.** `src/lib/live_cap.ts` exports `CPU_LIVE_FLOOR =
+    500` and `liveInitialPopulation(targetPopulation)`. `App.svelte`
+    uses it; `DEFAULT_WORLD_CONFIG.targetPopulation` stays at 50,000
+    so the vision cap is preserved on the spec. App also drops from
+    2 ticks/rAF to 1 tick/rAF so the budget stays comfortably under
+    one frame at the live floor. Regression test
+    `tests/engine/live_cap.test.ts` (4 tests) pins the floor, the
+    preserved 50k cap, and the pass-through behavior so this cannot
+    regress silently.
+  - **Acceptance #2 + #9.** `specs/genome_drift.md`,
+    `src/engine/core/drift.ts`, `tests/engine/drift.test.ts` (11
+    tests). `genomeStats(state, slotMask?)` returns per-slot mean +
+    variance across alive non-dust slots; `genomeDrift(from, to)`
+    returns slotted L2, max-slot-delta, and a sign vector;
+    `personalityNorm(stats)` is the personality sub-norm that
+    bypasses the foundation-slot floor. Spec records a correction
+    surfaced in test-writing: *unbiased mutation does NOT drift the
+    population mean against itself.* Acceptance compares two
+    populations with different founder distributions, plus a
+    separate test pins the symmetric-mutation property explicitly.
+  - **Acceptance #5.** `tests/engine/acceptance_cluster.test.ts`
+    (2 tests). On a 24-founder clustered world stepped 30 ticks,
+    `detectClusters` returns at least one cluster of size ≥ 2 (the
+    spec definition of "organism"). A second test pins the dynamic
+    shape: clustered mass holds ≥ 20% of the alive-non-dust
+    population across two seed variants.
+  - **Acceptance #10.** `tests/engine/acceptance_transplant.test.ts`
+    (1 test). Full copy → serialize → paste → 30-tick stepping.
+    Recipient alive-non-dust count strictly grows (fission
+    happened), `personalityNorm` stays positive (descendants
+    retained the donor's genome profile), and the per-slot drift
+    against the donor averages ≤ 0.05 — confirms the offspring
+    stayed on the donor's branch, not just that fission
+    generically drifts.
+  - **Visual evidence.** Headless capture harness
+    `tests/engine/visual_capture.test.ts` now writes a sidecar
+    `.txt` manifest alongside the PNG, citing drift metric values
+    (centroid_norm, personality_norm, self_drift_slotted_l2,
+    clusters_seen). Future state-of-play entries cite the `.txt`
+    not just the PNG. Honest observation: at tick 200 the default
+    neighbor radius (8) is below the natural separation of loose
+    survivors — `clusters_seen=0` is recorded, not hidden.
+  - **GPU pipeline spec.** `specs/gpu_pipeline.md` lays out the
+    buffery layout, compute pass order (clear → deposit → integrate
+    → collision via spatial-hash → fission), and the acceptance
+    gate (≤ 33 ms/step at 50k, energy conservation within WebGPU
+    float noise, cluster shape compatibility with the CPU
+    reference). Implementation follows in a separate change set.
+- **What is broken, rough, or missing**
+  - **Tier 2 — VISION §Core features #1 implementation.**
+    `src/engine/gpu/` doesn't exist yet. The spec is in place but
+    the WebGPU compute + render pipeline is still post-MVP. Without
+    it `targetPopulation = 50_000` cannot hit ≥ 30 FPS — the live
+    app currently runs at the 500 floor so the page actually
+    paints. Closing this is the *next* multi-session build target.
+  - **Acceptance items #3 (signal-driven clustering), #4
+    (predation/extinction), #6 (snapshot bit-identity acknowledged),
+    #7 (timeline scrub continuity), #8 (single-file export
+    round-trip).** Each has a possible regression test to land
+    before the GPU pipeline build starts; #3 and #4 are spec-driven
+    Tier-2 features (a spec is needed before the test per
+    `AGENTS.md §14`) and will land next.
+  - No headed-browser smoke this session. The boot fix is on the CPU
+    path; a real-browser run on `npm run dev` confirms the page no
+    longer hangs, but the dev server wasn't formally started (no
+    auto-puppeteer in the harness).
+- **What is "there" in the code but feels bad to use**
+  - The `live_cap.ts` floor is documented as a CPU-reference
+    safeguard. Once the GPU pipeline lands the floor can be removed
+    — but a permanent residual CPU floor is *also* useful as a
+    fallback when WebGPU is unavailable (the export bundle still has
+    to work in environments without GPU access). TBD as part of the
+    GPU pipeline implementation.
+  - The drift metric acceptance pins *cross-population* comparison,
+    not *self-after-stepping*, because unbiased Gaussian mutation
+    doesn't drift. That matches the spec — but it means the metric
+    *as a HUD readout* shows "this population's centroid moved"
+    only when the user actively compares two populations. A future
+    drift display could fold in selection-pressure signals (e.g.
+    energy-binned drift) for the live HUD; out of MVP scope but
+    worth tracking.
+- **What was not exercised this run**
+  - No headed-browser run. The USB webgpu smoke harness didn't
+    fire. The boot-fix verification is on the CPU engine stepping
+    order alone — a real tab on a real GPU is the next observation
+    to record.
+  - GPU compute + render — by design this session only landed the
+    spec; no shaders were written.
+  - No multi-minute playtest tape showing lineage divergence under
+    selection — would be the strongest evidence for the eventual
+    GPU pipeline landing.
+
+This session's commits, oldest to newest:
+`007c6ad fix(boot): cap live-app population at 500 instead of 50,000`,
+`6bed159 feat(engine): population-level genome drift metric`,
+`e77ed2d docs(spec): GPU compute + render pipeline`,
+`0a7630d test(acceptance #5): multi-cell organisms emerge`,
+`ff0e6e5 test(acceptance #10): transplant isolated organisms`,
+`a29da0b feat(visual): capture harness writes drift-metric sidecar`.
+
 ### [2026-06-30] — finish-developing-project session (MVP coverage)
 
 A long session to close MVP per the user's goal. The engine core from the
