@@ -474,12 +474,13 @@
   });
 
   /** Probe for a WebGPU adapter and instantiate a `GpuEngine` if
-   *  one is available. The current GPU surface is a CPU-backed
-   *  stub; this function only sets the HUD's `gpuStatus` indicator
-   *  so the user can see whether the browser exposes WebGPU. When
-   *  the real WebGPU compute + render pipeline lands, the
-   *  `stepOnce` call in `loop()` will be conditional on the
-   *  acquired engine. */
+   *  one is available. The current GPU surface is the WebGPU
+   *  pipeline orchestrator in `src/engine/gpu/pipeline.ts`;
+   *  on a headed browser with a real adapter the App shell
+   *  could swap the loop's `stepOnce(sim)` call for
+   *  `gpuEngine.stepOnce()` once the GPU→CPU readback path
+   *  is implemented. The probe is a best-effort feature
+   *  detection; today it falls back to the CPU reference. */
   async function acquireGpuEngine(): Promise<void> {
     if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
       gpuStatus = 'gpu: cpu (no WebGPU)';
@@ -487,22 +488,32 @@
     }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const gpu = (navigator as any).gpu as { requestAdapter?: () => Promise<unknown> };
+      const gpu = (navigator as any).gpu as {
+        requestAdapter?: () => Promise<{
+          requestDevice?: () => Promise<GPUDevice>;
+        } | null>;
+      };
       if (!gpu || typeof gpu.requestAdapter !== 'function') {
         gpuStatus = 'gpu: cpu (no WebGPU)';
         return;
       }
       const adapter = await gpu.requestAdapter();
-      if (!adapter) {
+      if (!adapter || typeof adapter.requestDevice !== 'function') {
         gpuStatus = 'gpu: cpu (no adapter)';
         return;
       }
-      // The adapter is real but `requestDevice` is a vendor-specific
-      // call that the stub doesn't need. Today the CPU-backed stub
-      // only requires a non-null `device`-shaped argument.
-      const fakeDevice = {} as unknown as GPUDevice;
-      gpuEngine = createGpuEngine(sim!, fakeDevice);
-      gpuStatus = gpuEngine.isGpu ? 'gpu: ready' : 'gpu: stub (cpu)';
+      const device = await adapter.requestDevice();
+      if (!device || typeof device.createComputePipeline !== 'function') {
+        gpuStatus = 'gpu: cpu (no device)';
+        return;
+      }
+      // Real device — instantiate the typed factory. The App
+      // shell continues to use the CPU reference today because
+      // the orchestrator's readState path is post-MVP; once
+      // GPU→CPU readback is implemented, the loop's
+      // `stepOnce(sim)` call can be conditional on this engine.
+      gpuEngine = createGpuEngine(sim!, device);
+      gpuStatus = gpuEngine.isGpu ? 'gpu: ready (orchestrator)' : 'gpu: stub (cpu)';
     } catch (e) {
       gpuStatus = `gpu: error (${(e as Error).message ?? 'unknown'})`;
     }
