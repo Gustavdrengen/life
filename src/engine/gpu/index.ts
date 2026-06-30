@@ -30,17 +30,30 @@
  */
 
 import type { SimulationState } from '../core/step.js';
-import { createSimulationState } from '../core/step.js';
 import { GENOME_LENGTH } from '../core/genome.js';
+
+export interface GpuReadback {
+  genomesSoA: Float32Array;
+  positionsSoA: Float32Array;
+  velocitiesSoA: Float32Array;
+  energies: Float32Array;
+  ages: Uint32Array;
+  alive: Uint8Array;
+  isDust: Uint8Array;
+  ids: Uint32Array;
+  parent: Int32Array;
+  field: Float32Array;
+}
 
 export interface GpuEngine {
   /** Push one fixed-Dt tick. Mutates all internal GPU buffers. */
   stepOnce(): void;
   /** Snapshot the SoA buffers to typed arrays in CPU memory.
-   *  Returns a fresh SimulationState independent of `state`. */
-  readState(): SimulationState;
+   *  Returns a fresh readback; the App's CPU-side Renderer
+   *  and Inspector read from this. */
+  readState(): Promise<GpuReadback>;
   /** Re-upload an externally-prepared state (snapshot load path). */
-  writeState(state: SimulationState): void;
+  writeState(state: GpuReadback): void;
   /** Hint the scheduler before/after a render frame. */
   beginRenderFrame(): void;
   endRenderFrame(): void;
@@ -111,21 +124,30 @@ export function createGpuEngine(
           'source for per-tick state transitions in the meantime.'
       );
     },
-    readState(): SimulationState {
-      // CPU-backed stub returns a fresh, empty SimulationState
-      // mirroring the input's config. The real GPU path will
-      // rehydrate from its own GPU buffers.
-      return createSimulationState(
-        state.storage.capacity,
-        state.world,
-        state.rng.snapshot()
-      );
+    async readState(): Promise<GpuReadback> {
+      // CPU-backed stub returns an empty readback matching the
+      // input's capacity + world shape. The real GPU path
+      // rehydrates from its own GPU buffers.
+      const cap = state.storage.capacity;
+      const lat = state.world.latticeResolution;
+      return {
+        genomesSoA: new Float32Array(cap * 77),
+        positionsSoA: new Float32Array(cap * 2),
+        velocitiesSoA: new Float32Array(cap * 2),
+        energies: new Float32Array(cap),
+        ages: new Uint32Array(cap),
+        alive: new Uint8Array(cap),
+        isDust: new Uint8Array(cap),
+        ids: new Uint32Array(cap),
+        parent: new Int32Array(cap),
+        field: new Float32Array(lat * lat * 3)
+      };
     },
-    writeState(next: SimulationState): void {
-      if (next.storage.capacity !== state.storage.capacity) {
+    writeState(next: GpuReadback): void {
+      if (next.genomesSoA.length / 77 !== state.storage.capacity) {
         throw new GpuEngineError(
           `GpuEngine.writeState: capacity mismatch ` +
-            `(${state.storage.capacity} vs ${next.storage.capacity})`
+            `(${state.storage.capacity} vs ${next.genomesSoA.length / 77})`
         );
       }
       // CPU-backed stub accepts the state but does nothing with

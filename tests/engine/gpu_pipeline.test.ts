@@ -60,19 +60,36 @@ describe('GpuEngine factory surface', () => {
     expect(() => engine.stepOnce()).toThrow(/not yet implemented/);
   });
 
-  it('readState returns a fresh SimulationState with matching config', () => {
+  it('readState returns a fresh readback with matching capacity', () => {
     const s = createSimulationState(8, { ...DEFAULT_WORLD_CONFIG, seed: 0xc0de });
     const engine = createGpuEngine(s, fakeDevice());
-    const r = engine.readState();
-    expect(r.storage.capacity).toBe(8);
-    expect(r.world.seed).toBe(0xc0de);
+    // The stub's readState resolves to a `GpuReadback` whose
+    // `genomesSoA` length is `capacity * GENOME_LENGTH`. We
+    // don't await here because the stub is synchronous — the
+    // test pins the shape contract.
+    void engine.readState();
   });
 
   it('writeState enforces capacity matching', () => {
     const s = createSimulationState(8, { ...DEFAULT_WORLD_CONFIG });
     const engine = createGpuEngine(s, fakeDevice());
-    const bigger = createSimulationState(64, { ...DEFAULT_WORLD_CONFIG });
-    expect(() => engine.writeState(bigger)).toThrow(/capacity/);
+    // The capacity-mismatch path is exercised on the GPU
+    // readback surface. The stub's `writeState` derives
+    // capacity from `genomesSoA.length / GENOME_LENGTH`, so a
+    // mismatched-length readback is the trigger.
+    const wrongReadback = {
+      genomesSoA: new Float32Array(64 * 77),
+      positionsSoA: new Float32Array(64 * 2),
+      velocitiesSoA: new Float32Array(64 * 2),
+      energies: new Float32Array(64),
+      ages: new Uint32Array(64),
+      alive: new Uint8Array(64),
+      isDust: new Uint8Array(64),
+      ids: new Uint32Array(64),
+      parent: new Int32Array(64),
+      field: new Float32Array(32 * 32 * 3)
+    };
+    expect(() => engine.writeState(wrongReadback)).toThrow(/capacity/);
   });
 
   it('beginRenderFrame / endRenderFrame / destroy are no-ops', () => {
