@@ -34,6 +34,7 @@
   import type { SimulationState } from '$engine/core/step.js';
   import type { ConfigKey, InspectorView } from '$lib/hud_types.js';
   import { DEFAULT_RENDER_OPTIONS, Renderer, type RenderOptions } from '$lib/Renderer.js';
+  import { liveInitialPopulation } from '$lib/live_cap.js';
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let fps = $state(0);
@@ -71,7 +72,15 @@
   // Number of detected multi-cell clusters — refreshed every render
   // frame so the HUD number is live.
   let clusterCount = $state(0);
-  const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
+  // Live-app CPU floor — see `src/lib/live_cap.ts`. Vision cap is
+  // 50k (`DEFAULT_WORLD_CONFIG.targetPopulation`), but the engine
+  // running the live browser app today is the CPU reference, whose
+  // collision pass is O(N²). At 50k the first tick takes >10 s and the
+  // page appears locked. We use a CPU-friendly floor so the first
+  // paint lands within one frame budget. The 50k vision cap is kept on
+  // `DEFAULT_WORLD_CONFIG` and will be re-enabled once the GPU
+  // pipeline (`src/engine/gpu/`) lands.
+  const initialPopulation = liveInitialPopulation(DEFAULT_WORLD_CONFIG.targetPopulation);
   /** Number of founding clusters. ~3% of the population — small enough
    * for visible color separation, large enough that no cluster trivially
    * starves. */
@@ -179,9 +188,11 @@
   function loop(): void {
     if (!renderer || !sim) return;
     if (!paused) {
-      // 2 ticks per frame — keeps things visibly alive without
-      // overwhelming the CPU.
-      for (let i = 0; i < 2; i++) stepOnce(sim);
+      // 1 tick per frame — keeps the loop under one rAF budget at
+      // the live-app CPU floor. Two ticks per frame at 500 founders
+      // is still cheap, but the safety margin is worth a single
+      // extra frame of perceived latency.
+      stepOnce(sim);
       // Record at the snapshotInterval boundary so the timeline stays
       // populated while the engine runs. power-of-two false positive
       // costs nothing past a duplicate-tick overwrite.
