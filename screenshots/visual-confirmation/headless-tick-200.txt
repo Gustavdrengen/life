@@ -1,0 +1,14 @@
+# headless visual capture. companion of /home/theman/life/screenshots/visual-confirmation/headless-tick-200.png
+# produced by tests/engine/visual_capture.test.ts
+tick=200
+active_count=1280
+before_count=1280
+after_count=1280
+before_centroid_norm=2.539100
+after_centroid_norm=2.539100
+before_personality_norm=0.582748
+after_personality_norm=0.582748
+self_drift_slotted_l2=0.000000
+self_drift_max_slot_delta=0.000000
+clusters_seen=0
+genome_length=77

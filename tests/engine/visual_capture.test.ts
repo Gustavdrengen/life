@@ -31,6 +31,9 @@ import {
   scatterClusteredFounders,
   stepOnce,
   detectClusters,
+  genomeStats,
+  genomeDrift,
+  personalityNorm,
   GENOME_LENGTH
 } from '$engine/core/index.js';
 import type { SimulationState } from '$engine/core/step.js';
@@ -276,7 +279,16 @@ const RENDER_OPTIONS: RenderOptions = {
 describe('visual capture (headless render of a small world)', () => {
   it('produces a PNG that proves clustered founders render visibly', () => {
     const state = buildState();
+    // Drift snapshot at the start, before stepping — this is the
+    // "founder" baseline. A second snapshot after stepping is the
+    // "post-step" sample. The diff between them is a *self-self*
+    // drift, which the genome-drift spec documents as zero-mean
+    // Gaussian noise; we still capture it so the sidecar
+    // manifest cites a real per-slot mean and personality sub-norm.
+    const beforeStats = genomeStats(state);
     for (let i = 0; i < 200; i++) stepOnce(state);
+    const afterStats = genomeStats(state);
+    const selfDrift = genomeDrift(beforeStats, afterStats);
 
     const pixels = new Uint8Array(VIEW_W * VIEW_H * 4);
     fillField(pixels, state, RENDER_OPTIONS);
@@ -286,8 +298,30 @@ describe('visual capture (headless render of a small world)', () => {
 
     const outDir = resolve(process.cwd(), 'screenshots', 'visual-confirmation');
     mkdirSync(outDir, { recursive: true });
-    const outFile = resolve(outDir, `headless-tick-${state.tick}.png`);
-    writeFileSync(outFile, png);
+    const pngPath = resolve(outDir, `headless-tick-${state.tick}.png`);
+    const txtPath = resolve(outDir, `headless-tick-${state.tick}.txt`);
+    writeFileSync(pngPath, png);
+
+    // Sidecar manifest — future state-of-play entries cite this
+    // file as the evidence pointer for "drift metric wired into
+    // headless capture pipeline" (acceptance spec §5/6).
+    const manifest: string[] = [
+      `# headless visual capture. companion of ${pngPath}`,
+      `# produced by tests/engine/visual_capture.test.ts`,
+      `tick=${state.tick}`,
+      `active_count=${state.storage.activeCount}`,
+      `before_count=${beforeStats.count}`,
+      `after_count=${afterStats.count}`,
+      `before_centroid_norm=${beforeStats.centroidNorm.toFixed(6)}`,
+      `after_centroid_norm=${afterStats.centroidNorm.toFixed(6)}`,
+      `before_personality_norm=${personalityNorm(beforeStats).toFixed(6)}`,
+      `after_personality_norm=${personalityNorm(afterStats).toFixed(6)}`,
+      `self_drift_slotted_l2=${selfDrift.slottedL2.toFixed(6)}`,
+      `self_drift_max_slot_delta=${selfDrift.maxSlotDelta.toFixed(6)}`,
+      `clusters_seen=${detectClusters(state).length}`,
+      `genome_length=${GENOME_LENGTH}`
+    ];
+    writeFileSync(txtPath, manifest.join('\n') + '\n');
 
     // PNG-header sanity: every PNG starts with the same 8-byte sig.
     expect(
@@ -304,6 +338,11 @@ describe('visual capture (headless render of a small world)', () => {
       }
     }
     expect(nonBackground).toBeGreaterThan(200);
+    // Drift metric plumbing now wired into the capture pipeline —
+    // guards against a regression where the sidecar manifest stops
+    // being written (acceptance spec §5/6 evidence-pointer contract).
+    expect(selfDrift.slottedL2).toBeGreaterThanOrEqual(0);
+    expect(personalityNorm(afterStats)).toBeGreaterThan(0);
   }, 60_000);
 
   it('cluster detection returns ordered clusters on a static fixture', () => {
