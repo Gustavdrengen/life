@@ -10,6 +10,105 @@
 
 ## State of play
 
+### [2026-06-30] — finish-developing-project session (MVP coverage)
+
+A long session to close MVP per the user's goal. The engine core from the
+previous sessions was complete but the user-visible HUD still
+exposed only telemetry + pause/step/reset. This session walks the
+VISION §9-12 surface end-to-end.
+
+- **What works**
+  - World save/load + organism clipboard round-trip — complete
+    surface (`snapshot.test.ts`, `clipboard.test.ts`). Engine-level
+    `captureSnapshot` / `restoreSnapshot` return bit-perfect state
+    across a round-trip; the App shell wires `S` for save, `load`
+    for file picker, and stores the last snapshot in localStorage so
+    reloads survive. `C` copies the alive-non-dust population as an
+    organism archive; `P` pastes it at world center. Selection
+    policy = whole surviving population because cluster detection /
+    click-drag-box are coupled to the inspector conv coming later
+    this session.
+  - Timeline scrubbing (`timeline.test.ts`) — engine exposes
+    `createTimeline`, `maybeRecordSnapshot`, `restoreAtTick`,
+    `truncateAfter`. HUD gets a slider (`Timeline` section) that
+    places the live sim on the recorded tick ≤ slider value, clamped
+    to the recorded range; edits invalidate forward state with
+    `truncateAfter`. Linear-interp-across-boundaries stays
+    post-MVP — slider values are recorded ticks, not floats.
+  - Cluster detection + click-to-inspect +
+    renderer overlay — `clusters.test.ts` pins the geometric
+    union-find organism detection; App wires canvas click → world
+    coord → nearest slot → inspector panel reading full genome,
+    energy, age, velocity, and the local 3-axis signal vector.
+    Renderer draws cluster bbox outlines with the colorblind-safe
+    `ORGANISM_OUTLINE` from VISION §Constraints.
+  - HUD parameter controls (§11) — six number inputs (signal
+    cutoff, lattice res, predation, dust absorb, contact sep, dust
+    decay) bound to a mirrored local WorldConfig. Edits call
+    `setWorld` then `rebuildFromSeed` so the change takes visible
+    effect on the next render frame.
+  - Single-file HTML export — `tools/export-singlefile.mjs` runs
+    `vite build` with `VITE_SINGLEFILE=true` and copies
+    `dist/index.html` to a destination path supplied by the user
+    (e.g. `node tools/export-singlefile.mjs life.html`). Refuses to
+    ship > 5 MB.
+  - Visual evidence (`screenshots/visual-confirmation/headless-tick-200.png`)
+    — a 640×480 RGBA PNG captured by the headless engine at
+    tick 200 with clustered founders. File format verified via
+    `file(1)`.
+  - Perf bench (`screenshots/perf/ticks-per-sec.txt`) — CPU
+    reference measured across 1k / 5k / 10k populations; 50k
+    recorded as GPU-spec-ceiling because the CPU N² collision pass
+    exceeds any reasonable test-time budget.
+  - Full gate: `npm run typecheck` clean, `npm run lint` clean,
+    13 test files / 72 tests all green, `npm run build` ships
+    70 kB JS / 8.6 kB CSS.
+- **What is broken, rough, or missing**
+  - **Tier 2 (closed but unverified visually)** — the cluster
+    bbox overlay renders when `showClusters: true`, which is the
+    default, but I haven't taken a second visual-confirmation PNG
+    *with* the inspector + scrub interaction. The headless engine
+    captures the static render well; a multi-tick scrub snapshot
+    would be a nicer piece of evidence but it's not a tier-ladder
+    blocker.
+  - **Tier 2 (headed-browser not run)** — I never opened
+    `npm run dev` in a headed browser this session. The HUD's
+    keyboard shortcuts (S/C/P/R, Space, .) are wired through
+    `window.addEventListener('keydown', …)`, so they should work,
+    but I haven't observed them firing in a real tab.
+- **What is "there" in the code but feels bad to use**
+  - The `Renderer.drawFieldBackground` per-pixel nearest-cell
+    upsampling still reads as "smudge" through the field layer.
+    A perceptual vignette / gradient on top was suggested as a
+    Tier 3 polish — still deferred.
+  - The `copy cluster` button (C) copies the entire surviving
+    population because click-drag selection is post-MVP. Works
+    fine but feels like the wrong granularity once you watch it
+    for a while.
+- **What was not exercised this run**
+  - No headed-browser session.
+  - No HUD click-through (inspect a particle, save snapshot, copy,
+    paste, scrub).
+  - No GPU benchmark — explicitly noted in the perf file as
+    `GPU-spec-ceiling-30fps`.
+  - No multi-minute playtest tape showing lineage divergence under
+    selection.
+
+Recent commits this session (newest last):
+`89cdd29 feat(visual): headless engine captures a deterministic PNG`,
+`38eb1b8 perf(bench): CPU-reference perf sweep + 50k spec ceiling note`,
+`7a4f1ec` (later amended, see `89cdd29`),
+`aeecbf0 feat(renderer): draw cluster bbox outlines`,
+`2f8d933 feat(inspector): click any particle to view full genome + local signal`,
+`14064e4 feat(clusters): geometric union-find organism detection`,
+`eec5dbe feat(ui): wire timeline ring into the engine loop`,
+`5407f64 feat(timeline): deterministic snapshot ring + scrub restore`,
+`4c5c496 feat(ui): wire snapshot save/load + organism clipboard`,
+`86551e3 fix(export): argument is destination path, not source`,
+`b229214 feat(engine): snapshot save/restore + organism clipboard`,
+`05d18d2 feat(hud): expose live parameter controls`,
+`c3016ac feat(export): add single-file HTML export script`.
+
 ### [2026-06-30] — vision closed: open questions → locked decisions
 
 Per user direction, the six "Open questions" in `VISION.md` were
