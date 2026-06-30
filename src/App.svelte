@@ -25,10 +25,14 @@
     restoreAtTick,
     truncateAfter,
     lastEntry,
+    detectClusters,
+    nearestParticleSlot,
+    sample,
+    GENOME_LENGTH,
     type Timeline
   } from '$engine/core/index.js';
   import type { SimulationState } from '$engine/core/step.js';
-  import type { ConfigKey } from '$lib/hud_types.js';
+  import type { ConfigKey, InspectorView } from '$lib/hud_types.js';
   import { DEFAULT_RENDER_OPTIONS, Renderer, type RenderOptions } from '$lib/Renderer.js';
 
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -60,6 +64,13 @@
   // mutable object — Svelte reactivity only needs scrubRange.
   let timeline: Timeline = createTimeline();
   let scrubRange = $state<[number, number]>([0, 0]);
+  // Click-to-inspect: null when no particle is selected. Inspector is
+  // a thin view into WorldConfig — we serialize a snapshot at click
+  // time so the panel doesn't go stale when the engine steps.
+  let inspector = $state<InspectorView | null>(null);
+  // Number of detected multi-cell clusters — refreshed every render
+  // frame so the HUD number is live.
+  let clusterCount = $state(0);
   const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
   /** Number of founding clusters. ~3% of the population — small enough
    * for visible color separation, large enough that no cluster trivially
@@ -181,6 +192,14 @@
     tick = sim.tick;
     population = sim.storage.activeCount;
     dustCt = countDust(sim);
+    // Lightweight cluster count — the panel needs a live number; the
+    // full cluster list is computed on demand (e.g. overlays). Skip
+    // every other frame because the bbox math is N^2.
+    if (sim.tick % 2 === 0) {
+      clusterCount = detectClusters(sim, { neighborRadius: 8, minClusterSize: 2 }).length;
+    } else {
+      // already updated last frame; no-op keeps Svelte from reading
+    }
     framesSinceSample++;
     const now = performance.now();
     if (now - lastFpsSample >= 1000) {
@@ -340,6 +359,63 @@
     if (file) void loadSnapshotFromFile(file);
   }
 
+  /** Convert a canvas-pixel (clientX, clientY) to the world's (wx, wy)
+   * coordinate. The canvas is sized to the window's clientWidth/
+   * clientHeight; the world maps linearly to those pixel dimensions.
+   */
+  function canvasToWorld(clientX: number, clientY: number): { wx: number; wy: number } | null {
+    if (!canvas || !sim) return null;
+    const rect = canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    if (px < 0 || py < 0 || px > rect.width || py > rect.height) return null;
+    return {
+      wx: (px / rect.width) * sim.world.width,
+      wy: (py / rect.height) * sim.world.height
+    };
+  }
+
+  function inspectorFromSlot(slot: number): InspectorView | null {
+    if (!sim) return null;
+    if (slot < 0 || slot >= sim.storage.capacity) return null;
+    if (sim.storage.alive[slot] !== 1) return null;
+    const x = sim.storage.positionsSoA[slot * 2] ?? 0;
+    const y = sim.storage.positionsSoA[slot * 2 + 1] ?? 0;
+    const localSignal = sample(sim.field, sim.world, x, y);
+    return {
+      slot,
+      tick: sim.tick,
+      energy: sim.storage.energies[slot] ?? 0,
+      age: sim.storage.ages[slot] ?? 0,
+      velocity: [
+        sim.storage.velocitiesSoA[slot * 2] ?? 0,
+        sim.storage.velocitiesSoA[slot * 2 + 1] ?? 0
+      ] as const,
+      localSignal,
+      genome: Array.from(
+        sim.storage.genomesSoA.subarray(slot * GENOME_LENGTH, (slot + 1) * GENOME_LENGTH)
+      )
+    };
+  }
+
+  function onCanvasClick(e: MouseEvent): void {
+    if (!sim) return;
+    const hit = canvasToWorld(e.clientX, e.clientY);
+    if (!hit) return;
+    // Search radius: convert 0.5 world inches (~12 px) into world units.
+    const searchRadius = Math.max(2, sim.world.width * 0.01);
+    const slot = nearestParticleSlot(sim, hit.wx, hit.wy, searchRadius);
+    if (slot < 0) {
+      inspector = null;
+      return;
+    }
+    inspector = inspectorFromSlot(slot);
+  }
+
+  function clearInspector(): void {
+    inspector = null;
+  }
+
   $effect(() => {
     if (!canvas) return;
     renderer = new Renderer(canvas);
@@ -367,7 +443,13 @@
 </script>
 
 <div class="relative flex h-full w-full overflow-hidden bg-bg-base">
-  <canvas bind:this={canvas} class="flex-1 block bg-bg-base" style="image-rendering:pixelated"></canvas>
+  <canvas
+    bind:this={canvas}
+    class="flex-1 block bg-bg-base cursor-crosshair"
+    style="image-rendering:pixelated"
+    onclick={onCanvasClick}
+    aria-label="Particle ecosystem view — click any particle to inspect"
+  ></canvas>
   <div class="absolute top-0 right-0 h-full">
     <Hud
       {fps}
@@ -375,10 +457,13 @@
       dustCount={dustCt}
       {tick}
       {config}
+      {inspector}
+      {clusterCount}
       paused={paused}
       initialPopulation={initialPopulation}
       clipboardStatus={clipboardStatus}
       scrubRange={scrubRange}
+      onClearInspector={clearInspector}
       onReset={resetWorld}
       onStep={() => sim && stepOnce(sim)}
       onTogglePause={() => (paused = !paused)}

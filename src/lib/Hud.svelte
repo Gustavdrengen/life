@@ -12,6 +12,8 @@
     dustCount,
     tick,
     config,
+    inspector,
+    onClearInspector,
     onReset,
     onStep,
     onTogglePause,
@@ -24,7 +26,8 @@
     scrubRange,
     clipboardStatus,
     paused,
-    initialPopulation
+    initialPopulation,
+    clusterCount
   }: HudProps = $props();
 
   function fmt(value: number): string {
@@ -243,13 +246,56 @@
     </ul>
   </section>
 
+  <section class="rounded border border-bg-edge bg-bg-edge/30 p-2" aria-label="Inspector">
+    <header class="flex items-baseline justify-between mb-1">
+      <h2 class="text-2xs uppercase tracking-widest text-text-secondary">Inspector</h2>
+      <p class="text-2xs text-text-muted font-mono">clusters: {clusterCount}</p>
+    </header>
+    {#if inspector !== null}
+      <dl class="grid grid-cols-2 gap-y-1 text-2xs">
+        <dt class="text-text-muted">slot</dt>
+        <dd class="font-mono text-text-primary text-right">{inspector.slot}</dd>
+        <dt class="text-text-muted">energy</dt>
+        <dd class="font-mono text-text-primary text-right">{fmt(inspector.energy)}</dd>
+        <dt class="text-text-muted">age</dt>
+        <dd class="font-mono text-text-primary text-right">{inspector.age}</dd>
+        <dt class="text-text-muted">velocity</dt>
+        <dd class="font-mono text-text-primary text-right">
+          ({fmt(inspector.velocity[0])}, {fmt(inspector.velocity[1])})
+        </dd>
+        <dt class="text-text-muted">signal</dt>
+        <dd class="font-mono text-text-primary text-right">
+          ({fmt(inspector.localSignal[0])}, {fmt(inspector.localSignal[1])}, {fmt(inspector.localSignal[2])})
+        </dd>
+      </dl>
+      <details class="mt-2">
+        <summary class="text-2xs text-text-muted cursor-pointer">genome ({inspector.genome.length} slots)</summary>
+        <ol class="text-2xs font-mono text-text-secondary mt-1 max-h-40 overflow-y-auto">
+          {#each inspector.genome as value, i (i)}
+            <li>slot {i.toString().padStart(2, '0')}: <span class="text-text-primary">{fmt(value)}</span></li>
+          {/each}
+        </ol>
+      </details>
+      <button
+        class="mt-2 text-left text-2xs px-2 py-1 bg-bg-edge text-text-secondary hover:text-text-primary rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-signalA"
+        type="button"
+        onclick={onClearInspector}
+        title="Clear the inspected particle"
+      >
+        clear
+      </button>
+    {:else}
+      <p class="text-2xs text-text-muted">click a particle to inspect.</p>
+    {/if}
+  </section>
+
   <section
     class="rounded border border-bg-edge bg-bg-edge/30 p-2 text-text-muted"
     aria-label="Help"
   >
     <p class="text-2xs">
       The signal field is the gradient. The genome is the only dial.
-      Cross-breeding is emergent.
+      Cross-breeding is emergent. Click a particle to inspect.
     </p>
   </section>
 </aside>

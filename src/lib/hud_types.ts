@@ -9,6 +9,19 @@ export type CopyOrganism = () => void;
 export type PasteOrganism = () => void;
 export type ScrubTo = (tick: number) => void;
 
+export interface InspectorView {
+  /** Slot index in the engine's ParticleStorage. */
+  slot: number;
+  tick: number;
+  energy: number;
+  age: number;
+  velocity: readonly [number, number];
+  /** 3-axis signal at the particle's position. */
+  localSignal: readonly [number, number, number];
+  /** Genome row — index aligned to GENOME constants in the engine. */
+  genome: readonly number[];
+}
+
 export interface HudProps {
   fps: number;
   population: number;
@@ -22,6 +35,8 @@ export interface HudProps {
     contactSeparation: number;
     dustDecayPerSec: number;
   };
+  inspector: InspectorView | null;
+  onClearInspector: () => void;
   onReset: Reset;
   onStep: () => void;
   onTogglePause: () => void;
@@ -36,6 +51,8 @@ export interface HudProps {
   clipboardStatus: string;
   paused: boolean;
   initialPopulation: number;
+  /** Number of detected multi-cell clusters at the current tick. */
+  clusterCount: number;
 }
 
 export type ConfigKey =
