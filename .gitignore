@@ -3,6 +3,10 @@ package-lock.json
 dist/
 build/
 .svelte-kit/
+screenshots/*
+!screenshots/visual-confirmation/
+!screenshots/visual-confirmation/*.png
+!screenshots/.gitkeep
 *.log
 .DS_Store
 .env
