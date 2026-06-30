@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
+import svelteParser from 'svelte-eslint-parser';
 import globals from 'globals';
 import prettier from 'eslint-config-prettier';
 
@@ -11,6 +12,17 @@ export default [
   ...svelte.configs['flat/recommended'],
   prettier,
   ...svelte.configs['flat/prettier'],
+  // Svelte files use a dedicated parser that understands <script lang="ts">.
+  {
+    files: ['**/*.svelte'],
+    languageOptions: {
+      parser: svelteParser,
+      parserOptions: {
+        parser: ts.parser,
+        extraFileExtensions: ['.svelte']
+      }
+    }
+  },
   {
     languageOptions: {
       ecmaVersion: 2023,
@@ -43,3 +55,4 @@ export default [
     ignores: ['dist/**', 'build/**', 'node_modules/**', '*.config.*', 'vite.config.ts']
   }
 ];
+

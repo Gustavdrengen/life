@@ -4,19 +4,7 @@
    * the engine writes and exposes minimal controls. Keep dense, dark,
    * keyboard-navigable, scientific-sandbox-vibe.
    */
-  type Reset = () => void;
-
-  interface Props {
-    fps: number;
-    population: number;
-    dustCount: number;
-    tick: number;
-    onReset: Reset;
-    onStep: () => void;
-    onTogglePause: () => void;
-    paused: boolean;
-    initialPopulation: number;
-  }
+  import type { HudProps } from '$lib/hud_types.js';
 
   let {
     fps,
@@ -28,7 +16,7 @@
     onTogglePause,
     paused,
     initialPopulation
-  }: Props = $props();
+  }: HudProps = $props();
 </script>
 
 <aside

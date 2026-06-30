@@ -10,9 +10,9 @@
     spawnParticle,
     scatterClusteredFounders,
     stepOnce,
-    type SimulationState,
     Rng
   } from '$engine/core/index.js';
+  import type { SimulationState } from '$engine/core/step.js';
   import { DEFAULT_RENDER_OPTIONS, Renderer, type RenderOptions } from '$lib/Renderer.js';
 
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -34,20 +34,20 @@
   const initialClusters = Math.max(6, Math.min(20, Math.floor(initialPopulation * 0.03)));
 
   function resetWorld(): void {
-    if (!state) return;
-    const seed = state.rng.snapshot();
-    state = createSimulationState(64_000, { ...DEFAULT_WORLD_CONFIG }, seed);
+    if (!sim) return;
+    const seed = sim.rng.snapshot();
+    sim = createSimulationState(64_000, { ...DEFAULT_WORLD_CONFIG }, seed);
     scatterClusteredFounders(
       initialPopulation,
-      state.rng,
-      state.world,
+      sim.rng,
+      sim.world,
       initialClusters
     ).forEach((f) => {
-      spawnParticle(state!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
+      spawnParticle(sim!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
     });
     tick = 0;
-    population = state.storage.activeCount;
-    dustCt = countDust(state);
+    population = sim.storage.activeCount;
+    dustCt = countDust(sim);
   }
 
   function countDust(s: SimulationState): number {

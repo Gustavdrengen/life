@@ -115,8 +115,8 @@ export function sample(
   y: number
 ): [number, number, number] {
   const cellSize = world.width / field.resolution;
-  let fx = x / cellSize - 0.5;
-  let fy = y / cellSize - 0.5;
+  const fx = x / cellSize - 0.5;
+  const fy = y / cellSize - 0.5;
   const x0 = Math.max(0, Math.min(field.resolution - 1, Math.floor(fx)));
   const y0 = Math.max(0, Math.min(field.resolution - 1, Math.floor(fy)));
   const x1 = Math.min(field.resolution - 1, x0 + 1);
