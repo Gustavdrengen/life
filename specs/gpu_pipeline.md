@@ -75,7 +75,7 @@ The 3-axis signal-field lattice (per `specs/ROOT.md §3`) is a separate
 buffer sized `latticeResolution² × 3`. The field is recomputed every
 tick after emitters deposit.
 
-Total payload at 50k capacity: per-particle ~340 B × 50,000 ≈ 17 MB.
+Total payload at 50k capacity: per-particle ~348 B × 50,000 ≈ 17 MB.
 The field lattice is ≤ 384 KiB on its own.
 
 ## 4. Compute pipeline pass order
