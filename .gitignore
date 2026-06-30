@@ -6,6 +6,8 @@ build/
 screenshots/*
 !screenshots/visual-confirmation/
 !screenshots/visual-confirmation/*.png
+!screenshots/perf/
+!screenshots/perf/*.txt
 !screenshots/.gitkeep
 *.log
 .DS_Store
