@@ -326,7 +326,6 @@ function passCollisions(state: SimulationState): void {
       const relVx = jvx - ivx;
       const relVy = jvy - ivy;
       const relVn = relVx * nx + relVy * ny; // along the contact normal (j - i)
-      const absRelVn = Math.abs(relVn);
 
       // Project positions back to contact.
       const overlap = minSep - dist;
@@ -348,6 +347,7 @@ function passCollisions(state: SimulationState): void {
       const jvSq = storage.velocitiesSoA[j * 2]! ** 2 + storage.velocitiesSoA[j * 2 + 1]! ** 2;
       const iIsPredator = Math.sqrt(ivSq) > world.predationSpeedThreshold;
       const jIsPredator = Math.sqrt(jvSq) > world.predationSpeedThreshold;
+      void relVn;
       if (
         storage.alive[i] === 1 &&
         storage.alive[j] === 1 &&
@@ -365,10 +365,10 @@ function passCollisions(state: SimulationState): void {
         iIsPredator &&
         jIsPredator
       ) {
-        // Both predators: faster along the contact normal wins. We use the
-        // sign of relVn — the original "j moving away from i along normal"
-        // verdict — to decide.
-        if (relVn > 0) {
+        // Both predators: faster speed wins.
+        const iSpeedSq = ivSq;
+        const jSpeedSq = jvSq;
+        if (jSpeedSq > iSpeedSq) {
           storage.energies[j]! = storage.energies[j]! + storage.energies[i]!;
           freeSlot(storage, i);
         } else {

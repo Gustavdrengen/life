@@ -103,7 +103,9 @@ describe('energy conservation', () => {
     // Force constant — predation transfers energy from victim to predator.
     expect(totalEnergy(state, true)).toBeCloseTo(initialTotal, 6);
     // One of the two is gone.
-    const aliveAfter = state.storage.alive[a] + state.storage.alive[b];
+    const aliveAfter =
+      (state.storage.alive[a] ?? 0) + (state.storage.alive[b] ?? 0);
     expect(aliveAfter).toBe(1);
   });
 });
+

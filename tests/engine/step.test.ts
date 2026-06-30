@@ -43,7 +43,14 @@ function snapshotEnergy(state: ReturnType<typeof makeState>): string {
       const y = state.storage.positionsSoA[i * 2 + 1]!;
       const vx = state.storage.velocitiesSoA[i * 2]!;
       const vy = state.storage.velocitiesSoA[i * 2 + 1]!;
-      snap.push(state.storage.energies[i]!, x, y, vx, vy, state.storage.isDust[i]);
+      snap.push(
+        state.storage.energies[i]!,
+        x,
+        y,
+        vx,
+        vy,
+        state.storage.isDust[i] ?? 0
+      );
     }
   }
   return snap.join(',');
