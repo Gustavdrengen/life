@@ -35,7 +35,9 @@ that surfaced from the test + build pass.
   - **Tier 1** — visual confirmation that clustered seeding
     produces visibly clustered motion is still outstanding. The
     code is in place; no headed-browser session has been run to
-    confirm the user-visible result.
+    confirm the user-visible result. (Headless chrome ran for the
+    smoke check but its virtual-time budget did not advance far
+    enough to render frames.)
   - **Tier 2** — GPU compute + render still post-MVP.
   - **Tier 0** — None observed.
 - **What is "there" in the code but feels bad to use**
