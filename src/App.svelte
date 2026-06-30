@@ -45,11 +45,12 @@
   let paused = $state(false);
   let renderer: Renderer | null = null;
   let sim: SimulationState | null = null;
-  // Optional WebGPU engine. Acquired on mount if the browser exposes
-  // a GPUDevice; the App continues to use the CPU reference engine
-  // (`stepOnce(sim)`) until `gpuEngine.stepOnce` is implemented. The
-  // acquisition path is wired so the real WebGPU shaders can swap
-  // in by simply replacing the `stepOnce` call in `loop()`.
+  // Optional WebGPU engine. Acquired on mount if the browser
+  // exposes a real `GPUDevice`; the App loop then calls
+  // `gpuEngine.stepOnce()` and reads back via
+  // `gpuEngine.readState()` so the Canvas2D Renderer can
+  // paint. When the GPU path is unavailable the App falls
+  // back to the CPU reference (`stepOnce(sim)`).
   let gpuEngine: GpuEngine | null = null;
   // Surface status: "gpu: ready" if WebGPU was acquired, "gpu: cpu
   // (no WebGPU)" if the browser lacks the API, "gpu: error" if
@@ -83,15 +84,15 @@
   // Number of detected multi-cell clusters — refreshed every render
   // frame so the HUD number is live.
   let clusterCount = $state(0);
-  // Live-app CPU floor — see `src/lib/live_cap.ts`. Vision cap is
-  // 50k (`DEFAULT_WORLD_CONFIG.targetPopulation`), but the engine
-  // running the live browser app today is the CPU reference, whose
-  // collision pass is O(N²). At 50k the first tick takes >10 s and the
-  // page appears locked. We use a CPU-friendly floor so the first
-  // paint lands within one frame budget. The 50k vision cap is kept on
-  // `DEFAULT_WORLD_CONFIG` and will be re-enabled once the GPU
-  // pipeline (`src/engine/gpu/`) lands.
-  const initialPopulation = liveInitialPopulation(DEFAULT_WORLD_CONFIG.targetPopulation);
+  // Live-app population. With the WebGPU pipeline + readback now in
+  // place, a headed browser with a real GPU device can run at the
+  // full 50,000 vision cap. On the CPU reference (a headed
+  // browser without WebGPU, or a CI smoke test) we still floor at
+  // 500 to keep the first paint inside one rAF. The CPU floor is
+  // applied when no GPU engine is acquired; once a real GPUDevice
+  // is available, the App lifts the population to the full cap.
+  const initialPopulation = DEFAULT_WORLD_CONFIG.targetPopulation;
+  const cpuFloor = liveInitialPopulation(DEFAULT_WORLD_CONFIG.targetPopulation);
   /** Number of founding clusters. ~3% of the population — small enough
    * for visible color separation, large enough that no cluster trivially
    * starves. */
@@ -196,19 +197,48 @@
     renderer?.resize(canvas.clientWidth, canvas.clientHeight);
   }
 
-  function loop(): void {
+  // Tracks whether the live loop is currently using the GPU
+  // path. The state is updated by the GPU probe callback
+  // and consumed by `loop()` on each frame to choose between
+  // the CPU reference and the WebGPU orchestrator.
+  let useGpu = $state(false);
+
+  async function loop(): Promise<void> {
     if (!renderer || !sim) return;
     if (!paused) {
-      // 1 tick per frame — keeps the loop under one rAF budget at
-      // the live-app CPU floor. Two ticks per frame at 500 founders
-      // is still cheap, but the safety margin is worth a single
-      // extra frame of perceived latency.
-      stepOnce(sim);
-      // Record at the snapshotInterval boundary so the timeline stays
-      // populated while the engine runs. power-of-two false positive
-      // costs nothing past a duplicate-tick overwrite.
-      maybeRecordSnapshot(sim, sim.world, timeline);
-      refreshScrubRange();
+      // When a real GPU device was acquired, dispatch the
+      // WebGPU step and read back into the CPU-side
+      // SimulationState so the Canvas2D Renderer can paint.
+      // The readback is async; we await it on each frame.
+      if (useGpu && gpuEngine && gpuEngine.isGpu) {
+        gpuEngine.stepOnce();
+        const rb = await gpuEngine.readState();
+        // Translate the readback into the SimulationState the
+        // Renderer reads from. This is a direct byte-level
+        // copy; the typed-array shapes match.
+        sim.storage.genomesSoA.set(rb.genomesSoA);
+        sim.storage.positionsSoA.set(rb.positionsSoA);
+        sim.storage.velocitiesSoA.set(rb.velocitiesSoA);
+        sim.storage.energies.set(rb.energies);
+        sim.storage.ages.set(rb.ages);
+        sim.storage.alive.set(rb.alive);
+        sim.storage.isDust.set(rb.isDust);
+        sim.storage.ids.set(rb.ids);
+        sim.storage.parent.set(rb.parent);
+        sim.field.cells.set(rb.field);
+        sim.tick++;
+        // Record at the snapshotInterval boundary so the
+        // timeline stays populated while the engine runs.
+        maybeRecordSnapshot(sim, sim.world, timeline);
+        refreshScrubRange();
+      } else {
+        // CPU reference path — 1 tick per frame keeps the
+        // loop under one rAF budget at the live-app CPU
+        // floor.
+        stepOnce(sim);
+        maybeRecordSnapshot(sim, sim.world, timeline);
+        refreshScrubRange();
+      }
     }
     renderer.render(sim, renderOpts);
     tick = sim.tick;
@@ -219,8 +249,6 @@
     // every other frame because the bbox math is N^2.
     if (sim.tick % 2 === 0) {
       clusterCount = detectClusters(sim, { neighborRadius: 8, minClusterSize: 2 }).length;
-    } else {
-      // already updated last frame; no-op keeps Svelte from reading
     }
     framesSinceSample++;
     const now = performance.now();
@@ -229,6 +257,11 @@
       lastFpsSample = now;
       framesSinceSample = 0;
     }
+    // Self-recurse via the async function. `requestAnimationFrame`
+    // schedules the next frame, then awaits the GPU readback
+    // before painting. On the CPU path the readback is
+    // synchronous (stub returns Promise.resolve), so the
+    // `await` is a no-op.
     rafHandle = requestAnimationFrame(loop);
   }
 
@@ -441,10 +474,17 @@
   $effect(() => {
     if (!canvas) return;
     renderer = new Renderer(canvas);
+    // Initialize the simulation with the live-app population.
+    // When the WebGPU pipeline is acquired the population is
+    // 50,000; without it the floor takes over (see
+    // `cpuFloor`). We re-seed after the GPU probe resolves,
+    // so the initial state matches the engine that will be
+    // used.
+    const initTarget = cpuFloor;
     sim = createSimulationState(64_000, { ...DEFAULT_WORLD_CONFIG }, DEFAULT_WORLD_CONFIG.seed);
     config = { ...DEFAULT_WORLD_CONFIG };
     const rng = new Rng(sim.rng.snapshot());
-    scatterClusteredFounders(initialPopulation, rng, sim.world, initialClusters).forEach((f) => {
+    scatterClusteredFounders(initTarget, rng, sim.world, initialClusters).forEach((f) => {
       spawnParticle(sim!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
     });
     population = sim.storage.activeCount;
@@ -473,14 +513,12 @@
     };
   });
 
-  /** Probe for a WebGPU adapter and instantiate a `GpuEngine` if
-   *  one is available. The current GPU surface is the WebGPU
-   *  pipeline orchestrator in `src/engine/gpu/pipeline.ts`;
-   *  on a headed browser with a real adapter the App shell
-   *  could swap the loop's `stepOnce(sim)` call for
-   *  `gpuEngine.stepOnce()` once the GPU→CPU readback path
-   *  is implemented. The probe is a best-effort feature
-   *  detection; today it falls back to the CPU reference. */
+  /** Probe for a WebGPU adapter and instantiate a `GpuEngine`
+   *  if one is available. On a real device the App loop
+   *  switches to the GPU path (readback into the CPU-side
+   *  SimulationState, Canvas2D Renderer paints). The probe
+   *  is best-effort; the CPU reference remains the
+   *  fallback for browsers without WebGPU. */
   async function acquireGpuEngine(): Promise<void> {
     if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
       gpuStatus = 'gpu: cpu (no WebGPU)';
@@ -507,16 +545,44 @@
         gpuStatus = 'gpu: cpu (no device)';
         return;
       }
-      // Real device — instantiate the typed factory. The App
-      // shell continues to use the CPU reference today because
-      // the orchestrator's readState path is post-MVP; once
-      // GPU→CPU readback is implemented, the loop's
-      // `stepOnce(sim)` call can be conditional on this engine.
+      // Real device — instantiate the typed factory and lift
+      // the loop to the GPU path. The simulation is re-seeded
+      // at the full 50,000 vision cap because the GPU
+      // pipeline is sized for that population.
       gpuEngine = createGpuEngine(sim!, device);
-      gpuStatus = gpuEngine.isGpu ? 'gpu: ready (orchestrator)' : 'gpu: stub (cpu)';
+      if (gpuEngine.isGpu) {
+        useGpu = true;
+        gpuStatus = 'gpu: ready (orchestrator)';
+        reSeedAtCap(DEFAULT_WORLD_CONFIG.targetPopulation);
+      } else {
+        gpuStatus = 'gpu: stub (cpu)';
+      }
     } catch (e) {
       gpuStatus = `gpu: error (${(e as Error).message ?? 'unknown'})`;
     }
+  }
+
+  /** Re-seed the simulation at `target` founders. Used when
+   *  the GPU path is acquired to lift the live app from the
+   *  CPU floor of 500 up to the full 50,000 vision cap. */
+  function reSeedAtCap(target: number): void {
+    if (!sim) return;
+    // Free the current population and re-spawn at the new
+    // count. The CPU-side SimulationState is the readback
+    // target; the GPU path's first stepOnce() will overwrite
+    // these arrays with the GPU-produced state.
+    for (let i = 0; i < sim.storage.capacity; i++) {
+      sim.storage.alive[i] = 0;
+    }
+    sim.storage.activeCount = 0;
+    sim.tick = 0;
+    const rng = new Rng(sim.rng.snapshot());
+    scatterClusteredFounders(target, rng, sim.world, initialClusters).forEach((f) => {
+      spawnParticle(sim!, f.x, f.y, f.vx, f.vy, f.energy, false, -1, f.genomeRow);
+    });
+    population = sim.storage.activeCount;
+    timeline = createTimeline();
+    recordNow(true);
   }
 </script>
 

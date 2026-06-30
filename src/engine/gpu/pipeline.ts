@@ -8,6 +8,8 @@
 // an inline directive; runtime semantics are sound.
 // @ts-nocheck
 
+import RENDER_WGSL from './shaders/render.wgsl?raw';
+
 /**
  * WebGPU compute pipeline orchestrator — wires the WGSL
  * shaders into a single `stepOnce()` call.
@@ -92,6 +94,8 @@ export class WebGpuPipelineOrchestrator {
     integrate: ComputePipeline;
     collide: ComputePipeline;
     fission: ComputePipeline;
+    fieldRender: ComputePipeline;
+    particleRender: ComputePipeline;
   };
   private readonly buffers: {
     genomes: GPUBuffer;
@@ -175,6 +179,26 @@ export class WebGpuPipelineOrchestrator {
           { buffer: this.buffers.isDust, type: 'read' },
           { buffer: this.buffers.daughterSlots, type: 'read_write' },
           { buffer: this.buffers.daughterCounter, type: 'read_write' }
+        ]
+      }),
+      // Render pipelines — consume the field + particle arrays.
+      // The render module's pipeline is constructed in the
+      // render surface (post-MVP). The orchestrator exposes
+      // `beginRenderFrame` / `endRenderFrame` hooks so the
+      // App shell can call into the render module.
+      fieldRender: this.createPipeline(RENDER_WGSL, 'vs_field_main', {
+        bindings: [
+          { buffer: this.uniformStaging, type: 'read' },
+          { buffer: this.buffers.field, type: 'read' }
+        ]
+      }),
+      particleRender: this.createPipeline(RENDER_WGSL, 'vs_particle_main', {
+        bindings: [
+          { buffer: this.uniformStaging, type: 'read' },
+          { buffer: this.buffers.genomes, type: 'read' },
+          { buffer: this.buffers.positions, type: 'read' },
+          { buffer: this.buffers.alive, type: 'read' },
+          { buffer: this.buffers.isDust, type: 'read' }
         ]
       })
     };
